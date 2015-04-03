@@ -283,7 +283,7 @@ func (d *decoder) ignore(n int) error {
 }
 
 // Specified in section B.2.2.
-func (d *decoder) processSOF(n int) error {
+func (d *decoder) processSOF(n int, configOnly bool) error {
 	switch n {
 	case 6 + 3*nGrayComponent:
 		d.nComp = nGrayComponent
@@ -301,6 +301,9 @@ func (d *decoder) processSOF(n int) error {
 	}
 	d.height = int(d.tmp[1])<<8 + int(d.tmp[2])
 	d.width = int(d.tmp[3])<<8 + int(d.tmp[4])
+	if configOnly {
+		return nil
+	}
 	if int(d.tmp[5]) != d.nComp {
 		return UnsupportedError("SOF has wrong number of image components")
 	}
@@ -462,7 +465,7 @@ func (d *decoder) decode(r io.Reader, configOnly bool) (image.Image, error) {
 		switch {
 		case marker == sof0Marker || marker == sof2Marker: // Start Of Frame.
 			d.progressive = marker == sof2Marker
-			err = d.processSOF(n)
+			err = d.processSOF(n, configOnly)
 			if configOnly {
 				return nil, err
 			}
