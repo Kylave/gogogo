@@ -234,20 +234,27 @@ create or update Go source files, for instance by running yacc.
 Go generate is never run automatically by go build, go get, go test,
 and so on. It must be run explicitly.
 
-Directives are written as a whole-line comment of the form
+Go generate scans the file for directives, which are lines of
+the form,
 
 	//go:generate command argument...
 
-(note: no space in "//go") where command is the generator to be
-run, corresponding to an executable file that can be run locally.
-It must either be in the shell path (gofmt), a fully qualified path
-(/usr/you/bin/mytool), or a command alias, described below.
+(note: no leading spaces and no space in "//go") where command
+is the generator to be run, corresponding to an executable file
+that can be run locally. It must either be in the shell path
+(gofmt), a fully qualified path (/usr/you/bin/mytool), or a
+command alias, described below.
 
-The arguments are space-separated tokens or double-quoted strings
-passed to the generator as individual arguments when it is run.
+Note that go generate does not parse the file, so lines that look
+like directives in comments or multiline strings will be treated
+as directives.
+
+The arguments to the directive are space-separated tokens or
+double-quoted strings passed to the generator as individual
+arguments when it is run.
 
 Quoted strings use Go syntax and are evaluated before execution; a
-quoted string appears a single argument to the generator.
+quoted string appears as a single argument to the generator.
 
 Go generate sets several variables when it runs the generator:
 
@@ -260,7 +267,7 @@ Go generate sets several variables when it runs the generator:
 	$GOPACKAGE
 		The name of the package of the file containing the directive.
 
-Other than variable substition and quoted-string evaluation, no
+Other than variable substitution and quoted-string evaluation, no
 special processing such as "globbing" is performed on the command
 line.
 
@@ -301,6 +308,7 @@ The generator is run in the package's source directory.
 Go generate accepts one specific flag:
 
 	-run=""
+		TODO: This flag is unimplemented.
 		if non-empty, specifies a regular expression to
 		select directives whose command matches the expression.
 
@@ -317,13 +325,18 @@ Download and install packages and dependencies
 
 Usage:
 
-	go get [-d] [-fix] [-t] [-u] [build flags] [packages]
+	go get [-d] [-f] [-fix] [-t] [-u] [build flags] [packages]
 
 Get downloads and installs the packages named by the import paths,
 along with their dependencies.
 
 The -d flag instructs get to stop after downloading the packages; that is,
 it instructs get not to install the packages.
+
+The -f flag, valid only when -u is set, forces get -u not to verify that
+each package has been checked out from the source control repository
+implied by its import path. This can be useful if the source is a local fork
+of the original.
 
 The -fix flag instructs get to run the fix tool on the downloaded packages
 before resolving dependencies or building the code.
@@ -590,7 +603,7 @@ Usage:
 
 Vet runs the Go vet command on the packages named by the import paths.
 
-For more about vet, see 'godoc code.google.com/p/go.tools/cmd/vet'.
+For more about vet, see 'godoc golang.org/x/tools/cmd/vet'.
 For more about specifying packages, see 'go help packages'.
 
 To run the vet tool with specific options, run 'go tool vet'.
@@ -863,7 +876,26 @@ listed in the GOPATH environment variable (see 'go help gopath').
 
 The go command attempts to download the version of the
 package appropriate for the Go release being used.
-Run 'go help install' for more.
+Run 'go help get' for more.
+
+Import path checking
+
+When the custom import path feature described above redirects to a
+known code hosting site, each of the resulting packages has two possible
+import paths, using the custom domain or the known hosting site.
+
+A package statement is said to have an "import comment" if it is immediately
+followed (before the next newline) by a comment of one of these two forms:
+
+	package math // import "path"
+	package math /* import "path" * /
+
+The go command will refuse to install a package with an import comment
+unless it is being referred to by that import path. In this way, import comments
+let package authors make sure the custom import path is used and not a
+direct path to the underlying code hosting site.
+
+See https://golang.org/s/go14customimport for details.
 
 
 Description of package lists
