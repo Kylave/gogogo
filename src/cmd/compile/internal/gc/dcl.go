@@ -73,10 +73,20 @@ func popdcl() {
 	}
 
 	if d == nil {
-		Fatalf("popdcl: no mark")
+		Fatal("popdcl: no mark")
 	}
 	dclstack = d.Link
 	block = d.Block
+}
+
+func poptodcl() {
+	// pop the old marker and push a new one
+	// (cannot reuse the existing one)
+	// because we use the markers to identify blocks
+	// for the goto restriction checks.
+	popdcl()
+
+	markdcl()
 }
 
 func markdcl() {
@@ -172,7 +182,7 @@ func declare(n *Node, ctxt uint8) {
 	s := n.Sym
 
 	// kludgy: typecheckok means we're past parsing.  Eg genwrapper may declare out of package names later.
-	if importpkg == nil && !typecheckok && s.Pkg != localpkg {
+	if importpkg == nil && typecheckok == 0 && s.Pkg != localpkg {
 		Yyerror("cannot declare name %v", s)
 	}
 
@@ -182,13 +192,13 @@ func declare(n *Node, ctxt uint8) {
 
 	gen := 0
 	if ctxt == PEXTERN {
-		externdcl = append(externdcl, n)
+		externdcl = list(externdcl, n)
 		if dflag() {
 			fmt.Printf("\t%v global decl %v %p\n", Ctxt.Line(int(lineno)), s, n)
 		}
 	} else {
 		if Curfn == nil && ctxt == PAUTO {
-			Fatalf("automatic outside function")
+			Fatal("automatic outside function")
 		}
 		if Curfn != nil {
 			Curfn.Func.Dcl = list(Curfn.Func.Dcl, n)
@@ -228,7 +238,7 @@ func declare(n *Node, ctxt uint8) {
 
 func addvar(n *Node, t *Type, ctxt uint8) {
 	if n == nil || n.Sym == nil || (n.Op != ONAME && n.Op != ONONAME) || t == nil {
-		Fatalf("addvar: n=%v t=%v nil", n, t)
+		Fatal("addvar: n=%v t=%v nil", n, t)
 	}
 
 	n.Op = ONAME
@@ -356,7 +366,7 @@ func constiter(vl *NodeList, t *Node, cl *NodeList) *NodeList {
  */
 func newname(s *Sym) *Node {
 	if s == nil {
-		Fatalf("newname nil")
+		Fatal("newname nil")
 	}
 
 	n := Nod(ONAME, nil, nil)
@@ -538,7 +548,7 @@ func colas(left *NodeList, right *NodeList, lno int32) *Node {
  */
 func ifacedcl(n *Node) {
 	if n.Op != ODCLFIELD || n.Right == nil {
-		Fatalf("ifacedcl")
+		Fatal("ifacedcl")
 	}
 
 	if isblank(n.Left) {
@@ -572,7 +582,7 @@ func ifacedcl(n *Node) {
 func funchdr(n *Node) {
 	// change the declaration context from extern to auto
 	if Funcdepth == 0 && dclcontext != PEXTERN {
-		Fatalf("funchdr: dclcontext")
+		Fatal("funchdr: dclcontext")
 	}
 
 	if importpkg == nil && n.Func.Nname != nil {
@@ -597,7 +607,7 @@ func funchdr(n *Node) {
 
 func funcargs(nt *Node) {
 	if nt.Op != OTFUNC {
-		Fatalf("funcargs %v", Oconv(int(nt.Op), 0))
+		Fatal("funcargs %v", Oconv(int(nt.Op), 0))
 	}
 
 	// re-start the variable generation number
@@ -611,7 +621,7 @@ func funcargs(nt *Node) {
 	if nt.Left != nil {
 		n := nt.Left
 		if n.Op != ODCLFIELD {
-			Fatalf("funcargs receiver %v", Oconv(int(n.Op), 0))
+			Fatal("funcargs receiver %v", Oconv(int(n.Op), 0))
 		}
 		if n.Left != nil {
 			n.Left.Op = ONAME
@@ -628,7 +638,7 @@ func funcargs(nt *Node) {
 	for l := nt.List; l != nil; l = l.Next {
 		n = l.N
 		if n.Op != ODCLFIELD {
-			Fatalf("funcargs in %v", Oconv(int(n.Op), 0))
+			Fatal("funcargs in %v", Oconv(int(n.Op), 0))
 		}
 		if n.Left != nil {
 			n.Left.Op = ONAME
@@ -649,7 +659,7 @@ func funcargs(nt *Node) {
 		n = l.N
 
 		if n.Op != ODCLFIELD {
-			Fatalf("funcargs out %v", Oconv(int(n.Op), 0))
+			Fatal("funcargs out %v", Oconv(int(n.Op), 0))
 		}
 
 		if n.Left == nil {
@@ -695,7 +705,7 @@ func funcargs(nt *Node) {
  */
 func funcargs2(t *Type) {
 	if t.Etype != TFUNC {
-		Fatalf("funcargs2 %v", t)
+		Fatal("funcargs2 %v", t)
 	}
 
 	if t.Thistuple != 0 {
@@ -743,7 +753,7 @@ func funcargs2(t *Type) {
 func funcbody(n *Node) {
 	// change the declaration context from auto to extern
 	if dclcontext != PAUTO {
-		Fatalf("funcbody: dclcontext")
+		Fatal("funcbody: dclcontext")
 	}
 	popdcl()
 	Funcdepth--
@@ -803,7 +813,7 @@ func structfield(n *Node) *Type {
 	lineno = n.Lineno
 
 	if n.Op != ODCLFIELD {
-		Fatalf("structfield: oops %v\n", n)
+		Fatal("structfield: oops %v\n", n)
 	}
 
 	f := typ(TFIELD)
@@ -824,7 +834,7 @@ func structfield(n *Node) *Type {
 
 	f.Type = n.Type
 	if f.Type == nil {
-		f.Broke = true
+		f.Broke = 1
 	}
 
 	switch n.Val().Ctype() {
@@ -884,16 +894,16 @@ func tostruct(l *NodeList) *Type {
 		tp = &f.Down
 	}
 
-	for f := t.Type; f != nil && !t.Broke; f = f.Down {
-		if f.Broke {
-			t.Broke = true
+	for f := t.Type; f != nil && t.Broke == 0; f = f.Down {
+		if f.Broke != 0 {
+			t.Broke = 1
 		}
 	}
 
 	uniqgen++
 	checkdupfields(t.Type, "field")
 
-	if !t.Broke {
+	if t.Broke == 0 {
 		checkwidth(t)
 	}
 
@@ -904,11 +914,11 @@ func tofunargs(l *NodeList) *Type {
 	var f *Type
 
 	t := typ(TSTRUCT)
-	t.Funarg = true
+	t.Funarg = 1
 
 	for tp := &t.Type; l != nil; l = l.Next {
 		f = structfield(l.N)
-		f.Funarg = true
+		f.Funarg = 1
 
 		// esc.c needs to find f given a PPARAM to add the tag.
 		if l.N.Left != nil && l.N.Left.Class == PPARAM {
@@ -919,9 +929,9 @@ func tofunargs(l *NodeList) *Type {
 		tp = &f.Down
 	}
 
-	for f := t.Type; f != nil && !t.Broke; f = f.Down {
-		if f.Broke {
-			t.Broke = true
+	for f := t.Type; f != nil && t.Broke == 0; f = f.Down {
+		if f.Broke != 0 {
+			t.Broke = 1
 		}
 	}
 
@@ -933,7 +943,7 @@ func interfacefield(n *Node) *Type {
 	lineno = n.Lineno
 
 	if n.Op != ODCLFIELD {
-		Fatalf("interfacefield: oops %v\n", n)
+		Fatal("interfacefield: oops %v\n", n)
 	}
 
 	if n.Val().Ctype() != CTxxx {
@@ -974,11 +984,11 @@ func interfacefield(n *Node) *Type {
 
 				case TFORW:
 					Yyerror("interface type loop involving %v", n.Type)
-					f.Broke = true
+					f.Broke = 1
 
 				default:
 					Yyerror("interface contains embedded non-interface %v", n.Type)
-					f.Broke = true
+					f.Broke = 1
 				}
 			}
 		}
@@ -988,7 +998,7 @@ func interfacefield(n *Node) *Type {
 
 	f.Type = n.Type
 	if f.Type == nil {
-		f.Broke = true
+		f.Broke = 1
 	}
 
 	lineno = int32(lno)
@@ -1024,9 +1034,9 @@ func tointerface(l *NodeList) *Type {
 		}
 	}
 
-	for f := t.Type; f != nil && !t.Broke; f = f.Down {
-		if f.Broke {
-			t.Broke = true
+	for f := t.Type; f != nil && t.Broke == 0; f = f.Down {
+		if f.Broke != 0 {
+			t.Broke = 1
 		}
 	}
 
@@ -1214,8 +1224,8 @@ func functype(this *Node, in *NodeList, out *NodeList) *Type {
 	checkdupfields(t.Type.Down.Type, "argument")
 	checkdupfields(t.Type.Down.Down.Type, "argument")
 
-	if t.Type.Broke || t.Type.Down.Broke || t.Type.Down.Down.Broke {
-		t.Broke = true
+	if t.Type.Broke != 0 || t.Type.Down.Broke != 0 || t.Type.Down.Down.Broke != 0 {
+		t.Broke = 1
 	}
 
 	if this != nil {
@@ -1223,11 +1233,11 @@ func functype(this *Node, in *NodeList, out *NodeList) *Type {
 	}
 	t.Outtuple = count(out)
 	t.Intuple = count(in)
-	t.Outnamed = false
+	t.Outnamed = 0
 	if t.Outtuple > 0 && out.N.Left != nil && out.N.Left.Orig != nil {
 		s := out.N.Left.Orig.Sym
 		if s != nil && (s.Name[0] != '~' || s.Name[1] != 'r') { // ~r%d is the name invented for an unnamed result
-			t.Outnamed = true
+			t.Outnamed = 1
 		}
 	}
 
@@ -1346,7 +1356,7 @@ func methodname1(n *Node, t *Node) *Node {
 func addmethod(sf *Sym, t *Type, local bool, nointerface bool) {
 	// get field sym
 	if sf == nil {
-		Fatalf("no method symbol")
+		Fatal("no method symbol")
 	}
 
 	// get parent type sym
@@ -1373,7 +1383,7 @@ func addmethod(sf *Sym, t *Type, local bool, nointerface bool) {
 				t = t.Type
 			}
 
-			if t.Broke { // rely on typecheck having complained before
+			if t.Broke != 0 { // rely on typecheck having complained before
 				return
 			}
 			if t.Sym == nil {
@@ -1423,7 +1433,7 @@ func addmethod(sf *Sym, t *Type, local bool, nointerface bool) {
 	for f := pa.Method; f != nil; f = f.Down {
 		d = f
 		if f.Etype != TFIELD {
-			Fatalf("addmethod: not TFIELD: %v", Tconv(f, obj.FmtLong))
+			Fatal("addmethod: not TFIELD: %v", Tconv(f, obj.FmtLong))
 		}
 		if sf.Name != f.Sym.Name {
 			continue
@@ -1439,7 +1449,7 @@ func addmethod(sf *Sym, t *Type, local bool, nointerface bool) {
 
 	// during import unexported method names should be in the type's package
 	if importpkg != nil && f.Sym != nil && !exportname(f.Sym.Name) && f.Sym.Pkg != structpkg {
-		Fatalf("imported method name %v in wrong package %s\n", Sconv(f.Sym, obj.FmtSign), structpkg.Name)
+		Fatal("imported method name %v in wrong package %s\n", Sconv(f.Sym, obj.FmtSign), structpkg.Name)
 	}
 
 	if d == nil {
@@ -1456,7 +1466,7 @@ func funccompile(n *Node) {
 
 	if n.Type == nil {
 		if nerrors == 0 {
-			Fatalf("funccompile missing type")
+			Fatal("funccompile missing type")
 		}
 		return
 	}
@@ -1465,7 +1475,7 @@ func funccompile(n *Node) {
 	checkwidth(n.Type)
 
 	if Curfn != nil {
-		Fatalf("funccompile %v inside %v", n.Func.Nname.Sym, Curfn.Func.Nname.Sym)
+		Fatal("funccompile %v inside %v", n.Func.Nname.Sym, Curfn.Func.Nname.Sym)
 	}
 
 	Stksize = 0

@@ -92,10 +92,18 @@ type Liveness struct {
 	livepointers     []Bvec
 }
 
+func xmalloc(size uint32) interface{} {
+	result := (interface{})(make([]byte, size))
+	if result == nil {
+		Fatal("malloc failed")
+	}
+	return result
+}
+
 // Constructs a new basic block containing a single instruction.
 func newblock(prog *obj.Prog) *BasicBlock {
 	if prog == nil {
-		Fatalf("newblock: prog cannot be nil")
+		Fatal("newblock: prog cannot be nil")
 	}
 	result := new(BasicBlock)
 	result.rpo = -1
@@ -107,14 +115,21 @@ func newblock(prog *obj.Prog) *BasicBlock {
 	return result
 }
 
+// Frees a basic block and all of its leaf data structures.
+func freeblock(bb *BasicBlock) {
+	if bb == nil {
+		Fatal("freeblock: cannot free nil")
+	}
+}
+
 // Adds an edge between two basic blocks by making from a predecessor of to and
 // to a successor of from.
 func addedge(from *BasicBlock, to *BasicBlock) {
 	if from == nil {
-		Fatalf("addedge: from is nil")
+		Fatal("addedge: from is nil")
 	}
 	if to == nil {
-		Fatalf("addedge: to is nil")
+		Fatal("addedge: to is nil")
 	}
 	from.succ = append(from.succ, to)
 	to.pred = append(to.pred, from)
@@ -275,10 +290,10 @@ func (x blockrpocmp) Less(i, j int) bool { return x[i].rpo < x[j].rpo }
 // is a call to a specific package qualified function name.
 func iscall(prog *obj.Prog, name *obj.LSym) bool {
 	if prog == nil {
-		Fatalf("iscall: prog is nil")
+		Fatal("iscall: prog is nil")
 	}
 	if name == nil {
-		Fatalf("iscall: function name is nil")
+		Fatal("iscall: function name is nil")
 	}
 	if prog.As != obj.ACALL {
 		return false
@@ -348,14 +363,14 @@ func addselectgosucc(selectgo *BasicBlock) {
 	pred := selectgo
 	for {
 		if len(pred.pred) == 0 {
-			Fatalf("selectgo does not have a newselect")
+			Fatal("selectgo does not have a newselect")
 		}
 		pred = pred.pred[0]
 		if blockany(pred, isselectcommcasecall) {
 			// A select comm case block should have exactly one
 			// successor.
 			if len(pred.succ) != 1 {
-				Fatalf("select comm case has too many successors")
+				Fatal("select comm case has too many successors")
 			}
 			succ = pred.succ[0]
 
@@ -364,7 +379,7 @@ func addselectgosucc(selectgo *BasicBlock) {
 			// and the branch should lead to the select case
 			// statements block.
 			if len(succ.succ) != 2 {
-				Fatalf("select comm case successor has too many successors")
+				Fatal("select comm case successor has too many successors")
 			}
 
 			// Add the block as a successor of the selectgo block.
@@ -414,7 +429,7 @@ func newcfg(firstp *obj.Prog) []*BasicBlock {
 		Thearch.Proginfo(p)
 		if p.To.Type == obj.TYPE_BRANCH {
 			if p.To.Val == nil {
-				Fatalf("prog branch to nil")
+				Fatal("prog branch to nil")
 			}
 			if p.To.Val.(*obj.Prog).Opt == nil {
 				p.To.Val.(*obj.Prog).Opt = newblock(p.To.Val.(*obj.Prog))
@@ -509,7 +524,7 @@ func newcfg(firstp *obj.Prog) []*BasicBlock {
 	if bb.rpo == -1 {
 		fmt.Printf("newcfg: unreachable basic block for %v\n", bb.last)
 		printcfg(cfg)
-		Fatalf("newcfg: invalid control flow graph")
+		Fatal("newcfg: invalid control flow graph")
 	}
 
 	return cfg
@@ -611,7 +626,7 @@ func progeffects(prog *obj.Prog, vars []*Node, uevar Bvec, varkill Bvec, avarini
 					goto Next
 				}
 				if pos >= int32(len(vars)) || vars[pos] != from.Node {
-					Fatalf("bad bookkeeping in liveness %v %d", Nconv(from.Node.(*Node), 0), pos)
+					Fatal("bad bookkeeping in liveness %v %d", Nconv(from.Node.(*Node), 0), pos)
 				}
 				if ((from.Node).(*Node)).Addrtaken {
 					bvset(avarinit, pos)
@@ -640,7 +655,7 @@ Next:
 					return
 				}
 				if pos >= int32(len(vars)) || vars[pos] != to.Node {
-					Fatalf("bad bookkeeping in liveness %v %d", Nconv(to.Node.(*Node), 0), pos)
+					Fatal("bad bookkeeping in liveness %v %d", Nconv(to.Node.(*Node), 0), pos)
 				}
 				if ((to.Node).(*Node)).Addrtaken {
 					if prog.As != obj.AVARKILL {
@@ -703,7 +718,7 @@ func newliveness(fn *Node, ptxt *obj.Prog, cfg []*BasicBlock, vars []*Node) *Liv
 // Frees the liveness structure and all of its leaf data structures.
 func freeliveness(lv *Liveness) {
 	if lv == nil {
-		Fatalf("freeliveness: cannot free nil")
+		Fatal("freeliveness: cannot free nil")
 	}
 }
 
@@ -875,7 +890,7 @@ func checkptxt(fn *Node, firstp *obj.Prog) {
 // accounts for 40% of the 6g execution time.
 func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 	if t.Align > 0 && *xoffset&int64(t.Align-1) != 0 {
-		Fatalf("onebitwalktype1: invalid initial alignment, %v", t)
+		Fatal("onebitwalktype1: invalid initial alignment, %v", t)
 	}
 
 	switch t.Etype {
@@ -904,7 +919,7 @@ func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 		TCHAN,
 		TMAP:
 		if *xoffset&int64(Widthptr-1) != 0 {
-			Fatalf("onebitwalktype1: invalid alignment, %v", t)
+			Fatal("onebitwalktype1: invalid alignment, %v", t)
 		}
 		bvset(bv, int32(*xoffset/int64(Widthptr))) // pointer
 		*xoffset += t.Width
@@ -912,7 +927,7 @@ func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 	case TSTRING:
 		// struct { byte *str; intgo len; }
 		if *xoffset&int64(Widthptr-1) != 0 {
-			Fatalf("onebitwalktype1: invalid alignment, %v", t)
+			Fatal("onebitwalktype1: invalid alignment, %v", t)
 		}
 		bvset(bv, int32(*xoffset/int64(Widthptr))) //pointer in first slot
 		*xoffset += t.Width
@@ -922,7 +937,7 @@ func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 		// or, when isnilinter(t)==true:
 		// struct { Type *type; void *data; }
 		if *xoffset&int64(Widthptr-1) != 0 {
-			Fatalf("onebitwalktype1: invalid alignment, %v", t)
+			Fatal("onebitwalktype1: invalid alignment, %v", t)
 		}
 		bvset(bv, int32(*xoffset/int64(Widthptr)))   // pointer in first slot
 		bvset(bv, int32(*xoffset/int64(Widthptr)+1)) // pointer in second slot
@@ -932,12 +947,12 @@ func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 		// The value of t->bound is -1 for slices types and >=0 for
 		// for fixed array types.  All other values are invalid.
 		if t.Bound < -1 {
-			Fatalf("onebitwalktype1: invalid bound, %v", t)
+			Fatal("onebitwalktype1: invalid bound, %v", t)
 		}
 		if Isslice(t) {
 			// struct { byte *array; uintgo len; uintgo cap; }
 			if *xoffset&int64(Widthptr-1) != 0 {
-				Fatalf("onebitwalktype1: invalid TARRAY alignment, %v", t)
+				Fatal("onebitwalktype1: invalid TARRAY alignment, %v", t)
 			}
 			bvset(bv, int32(*xoffset/int64(Widthptr))) // pointer in first slot (BitsPointer)
 			*xoffset += t.Width
@@ -960,7 +975,7 @@ func onebitwalktype1(t *Type, xoffset *int64, bv Bvec) {
 		*xoffset += t.Width - o
 
 	default:
-		Fatalf("onebitwalktype1: unexpected type, %v", t)
+		Fatal("onebitwalktype1: unexpected type, %v", t)
 	}
 }
 
@@ -1331,7 +1346,7 @@ func livenessepilogue(lv *Liveness) {
 		if pos < 0 {
 			// the first block we encounter should have the ATEXT so
 			// at no point should pos ever be less than zero.
-			Fatalf("livenessepilogue")
+			Fatal("livenessepilogue")
 		}
 
 		bvcopy(livein, bb.liveout)
@@ -1670,13 +1685,15 @@ func livenessprintdebug(lv *Liveness) {
 				for j = 0; j < len(lv.vars); j++ {
 					n = lv.vars[j]
 					if islive(n, args, locals) {
-						if printed != 0 {
+						tmp9 := printed
+						printed++
+						if tmp9 != 0 {
 							fmt.Printf(",")
 						}
 						fmt.Printf("%v", n)
-						printed++
 					}
 				}
+
 				fmt.Printf("\n")
 			}
 

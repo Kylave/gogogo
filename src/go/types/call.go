@@ -61,7 +61,7 @@ func (check *Checker) call(x *operand, e *ast.CallExpr) exprKind {
 			return statement
 		}
 
-		arg, n, _ := unpack(func(x *operand, i int) { check.multiExpr(x, e.Args[i]) }, len(e.Args), false)
+		arg, n, _ := unpack(func(x *operand, i int) { check.expr(x, e.Args[i]) }, len(e.Args), false)
 		if arg == nil {
 			x.mode = invalid
 			x.expr = e
@@ -181,14 +181,14 @@ func unpack(get getter, n int, allowCommaOk bool) (getter, int, bool) {
 func (check *Checker) arguments(x *operand, call *ast.CallExpr, sig *Signature, arg getter, n int) {
 	if call.Ellipsis.IsValid() {
 		// last argument is of the form x...
-		if !sig.variadic {
-			check.errorf(call.Ellipsis, "cannot use ... in call to non-variadic %s", call.Fun)
+		if len(call.Args) == 1 && n > 1 {
+			// f()... is not permitted if f() is multi-valued
+			check.errorf(call.Ellipsis, "cannot use ... with %d-valued expression %s", n, call.Args[0])
 			check.useGetter(arg, n)
 			return
 		}
-		if len(call.Args) == 1 && n > 1 {
-			// f()... is not permitted if f() is multi-valued
-			check.errorf(call.Ellipsis, "cannot use ... with %d-valued %s", n, call.Args[0])
+		if !sig.variadic {
+			check.errorf(call.Ellipsis, "cannot use ... in call to non-variadic %s", call.Fun)
 			check.useGetter(arg, n)
 			return
 		}
@@ -202,7 +202,7 @@ func (check *Checker) arguments(x *operand, call *ast.CallExpr, sig *Signature, 
 			if i == n-1 && call.Ellipsis.IsValid() {
 				ellipsis = call.Ellipsis
 			}
-			check.argument(call.Fun, sig, i, x, ellipsis)
+			check.argument(sig, i, x, ellipsis)
 		}
 	}
 
@@ -220,12 +220,7 @@ func (check *Checker) arguments(x *operand, call *ast.CallExpr, sig *Signature, 
 
 // argument checks passing of argument x to the i'th parameter of the given signature.
 // If ellipsis is valid, the argument is followed by ... at that position in the call.
-func (check *Checker) argument(fun ast.Expr, sig *Signature, i int, x *operand, ellipsis token.Pos) {
-	check.singleValue(x)
-	if x.mode == invalid {
-		return
-	}
-
+func (check *Checker) argument(sig *Signature, i int, x *operand, ellipsis token.Pos) {
 	n := sig.params.Len()
 
 	// determine parameter type
@@ -246,12 +241,18 @@ func (check *Checker) argument(fun ast.Expr, sig *Signature, i int, x *operand, 
 	}
 
 	if ellipsis.IsValid() {
-		// argument is of the form x... and x is single-valued
+		// argument is of the form x...
 		if i != n-1 {
 			check.errorf(ellipsis, "can only use ... with matching parameter")
 			return
 		}
-		if _, ok := x.typ.Underlying().(*Slice); !ok {
+		switch t := x.typ.Underlying().(type) {
+		case *Slice:
+			// ok
+		case *Tuple:
+			check.errorf(ellipsis, "cannot use ... with %d-valued expression %s", t.Len(), x)
+			return
+		default:
 			check.errorf(x.pos(), "cannot use %s as parameter of type %s", x, typ)
 			return
 		}
@@ -260,7 +261,9 @@ func (check *Checker) argument(fun ast.Expr, sig *Signature, i int, x *operand, 
 		typ = typ.(*Slice).elem
 	}
 
-	check.assignment(x, typ, check.sprintf("argument to %s", fun))
+	if !check.assignment(x, typ) && x.mode != invalid {
+		check.errorf(x.pos(), "cannot pass argument %s to parameter of type %s", x, typ)
+	}
 }
 
 func (check *Checker) selector(x *operand, e *ast.SelectorExpr) {

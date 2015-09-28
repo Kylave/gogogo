@@ -170,7 +170,7 @@ func setaddrs(bit Bits) {
 
 	for bany(&bit) {
 		// convert each bit to a variable
-		i = bnum(&bit)
+		i = bnum(bit)
 
 		node = vars[i].node
 		n = int(vars[i].name)
@@ -351,7 +351,7 @@ func mkvar(f *Flow, a *obj.Addr) Bits {
 	}
 	node = node.Orig
 	if node.Orig != node {
-		Fatalf("%v: bad node", Ctxt.Dconv(a))
+		Fatal("%v: bad node", Ctxt.Dconv(a))
 	}
 	if node.Sym == nil || node.Sym.Name[0] == '.' {
 		return zbits
@@ -360,7 +360,7 @@ func mkvar(f *Flow, a *obj.Addr) Bits {
 	o := a.Offset
 	w := a.Width
 	if w < 0 {
-		Fatalf("bad width %d for %v", w, Ctxt.Dconv(a))
+		Fatal("bad width %d for %v", w, Ctxt.Dconv(a))
 	}
 
 	flag := 0
@@ -396,7 +396,7 @@ func mkvar(f *Flow, a *obj.Addr) Bits {
 
 	if nvar >= NVAR {
 		if Debug['w'] > 1 && node != nil {
-			Fatalf("variable not optimized: %v", Nconv(node, obj.FmtSharp))
+			Fatal("variable not optimized: %v", Nconv(node, obj.FmtSharp))
 		}
 		if Debug['v'] > 0 {
 			Warn("variable not optimized: %v", Nconv(node, obj.FmtSharp))
@@ -486,7 +486,7 @@ func mkvar(f *Flow, a *obj.Addr) Bits {
 	//
 	// Disable registerization for results if using defer, because the deferred func
 	// might recover and return, causing the current values to be used.
-	if node.Class == PEXTERN || (hasdefer && node.Class == PPARAMOUT) {
+	if node.Class == PEXTERN || (Hasdefer != 0 && node.Class == PPARAMOUT) {
 		v.addr = 1
 	}
 
@@ -655,7 +655,7 @@ func allreg(b uint64, r *Rgn) uint64 {
 	r.regno = 0
 	switch v.etype {
 	default:
-		Fatalf("unknown etype %d/%v", Bitno(b), Econv(int(v.etype), 0))
+		Fatal("unknown etype %d/%v", Bitno(b), Econv(int(v.etype), 0))
 
 	case TINT8,
 		TUINT8,
@@ -1120,7 +1120,7 @@ func regopt(firstp *obj.Prog) {
 		// Currently we never generate three register forms.
 		// If we do, this will need to change.
 		if p.From3Type() != obj.TYPE_NONE {
-			Fatalf("regopt not implemented for from3")
+			Fatal("regopt not implemented for from3")
 		}
 
 		bit = mkvar(f, &p.To)
@@ -1289,12 +1289,12 @@ loop2:
 		for z := 0; z < BITS; z++ {
 			bit.b[z] = (r.refahead.b[z] | r.calahead.b[z]) &^ (externs.b[z] | params.b[z] | addrs.b[z] | consts.b[z])
 		}
-		if bany(&bit) && !f.Refset {
+		if bany(&bit) && f.Refset == 0 {
 			// should never happen - all variables are preset
 			if Debug['w'] != 0 {
 				fmt.Printf("%v: used and not set: %v\n", f.Prog.Line(), &bit)
 			}
-			f.Refset = true
+			f.Refset = 1
 		}
 	}
 
@@ -1309,11 +1309,11 @@ loop2:
 		for z := 0; z < BITS; z++ {
 			bit.b[z] = r.set.b[z] &^ (r.refahead.b[z] | r.calahead.b[z] | addrs.b[z])
 		}
-		if bany(&bit) && !f.Refset {
+		if bany(&bit) && f.Refset == 0 {
 			if Debug['w'] != 0 {
 				fmt.Printf("%v: set and not used: %v\n", f.Prog.Line(), &bit)
 			}
-			f.Refset = true
+			f.Refset = 1
 			Thearch.Excise(f)
 		}
 
@@ -1321,7 +1321,7 @@ loop2:
 			bit.b[z] = LOAD(r, z) &^ (r.act.b[z] | addrs.b[z])
 		}
 		for bany(&bit) {
-			i = bnum(&bit)
+			i = bnum(bit)
 			change = 0
 			paint1(f, i)
 			biclr(&bit, uint(i))
@@ -1465,14 +1465,14 @@ func bany(a *Bits) bool {
 }
 
 // bnum reports the lowest index of a 1 bit in a.
-func bnum(a *Bits) int {
+func bnum(a Bits) int {
 	for i, x := range &a.b { // & to avoid making a copy of a.b
 		if x != 0 {
 			return 64*i + Bitno(x)
 		}
 	}
 
-	Fatalf("bad in bnum")
+	Fatal("bad in bnum")
 	return 0
 }
 
@@ -1499,10 +1499,10 @@ func biclr(a *Bits, n uint) {
 }
 
 // Bitno reports the lowest index of a 1 bit in b.
-// It calls Fatalf if there is no 1 bit.
+// It calls Fatal if there is no 1 bit.
 func Bitno(b uint64) int {
 	if b == 0 {
-		Fatalf("bad in bitno")
+		Fatal("bad in bitno")
 	}
 	n := 0
 	if b&(1<<32-1) == 0 {
@@ -1541,7 +1541,7 @@ func (bits Bits) String() string {
 	var buf bytes.Buffer
 	sep := ""
 	for bany(&bits) {
-		i := bnum(&bits)
+		i := bnum(bits)
 		buf.WriteString(sep)
 		sep = " "
 		v := &vars[i]

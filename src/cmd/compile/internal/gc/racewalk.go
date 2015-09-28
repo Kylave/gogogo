@@ -32,8 +32,8 @@ var noinst_pkgs = []string{"sync", "sync/atomic"}
 
 func ispkgin(pkgs []string) bool {
 	if myimportpath != "" {
-		for _, p := range pkgs {
-			if myimportpath == p {
+		for i := 0; i < len(pkgs); i++ {
+			if myimportpath == pkgs[i] {
 				return true
 			}
 		}
@@ -116,7 +116,7 @@ func racewalknode(np **Node, init **NodeList, wr int, skip int) {
 	}
 	setlineno(n)
 	if init == nil {
-		Fatalf("racewalk: bad init list")
+		Fatal("racewalk: bad init list")
 	}
 	if init == &n.Ninit {
 		// If init == &n->ninit and n->ninit is non-nil,
@@ -136,7 +136,7 @@ func racewalknode(np **Node, init **NodeList, wr int, skip int) {
 
 	switch n.Op {
 	default:
-		Fatalf("racewalk: unknown node type %v", Oconv(int(n.Op), 0))
+		Fatal("racewalk: unknown node type %v", Oconv(int(n.Op), 0))
 
 	case OAS, OASWB, OAS2FUNC:
 		racewalknode(&n.Left, init, 1, 0)

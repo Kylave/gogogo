@@ -5,19 +5,20 @@
 package big
 
 import (
-	"bytes"
 	"io"
 	"strings"
 	"testing"
 )
 
-func itoa(x nat, base int) []byte {
+func toString(x nat, charset string) string {
+	base := len(charset)
+
 	// special cases
 	switch {
 	case base < 2:
 		panic("illegal base")
 	case len(x) == 0:
-		return []byte("0")
+		return string(charset[0])
 	}
 
 	// allocate buffer for conversion
@@ -32,53 +33,54 @@ func itoa(x nat, base int) []byte {
 		i--
 		var r Word
 		q, r = q.divW(q, Word(base))
-		s[i] = digits[r]
+		s[i] = charset[r]
 	}
 
-	return s[i:]
+	return string(s[i:])
 }
 
 var strTests = []struct {
 	x nat    // nat value to be converted
-	b int    // conversion base
+	c string // conversion charset
 	s string // expected result
 }{
-	{nil, 2, "0"},
-	{nat{1}, 2, "1"},
-	{nat{0xc5}, 2, "11000101"},
-	{nat{03271}, 8, "3271"},
-	{nat{10}, 10, "10"},
-	{nat{1234567890}, 10, "1234567890"},
-	{nat{0xdeadbeef}, 16, "deadbeef"},
-	{nat{0x229be7}, 17, "1a2b3c"},
-	{nat{0x309663e6}, 32, "o9cov6"},
+	{nil, "01", "0"},
+	{nat{1}, "01", "1"},
+	{nat{0xc5}, "01", "11000101"},
+	{nat{03271}, lowercaseDigits[:8], "3271"},
+	{nat{10}, lowercaseDigits[:10], "10"},
+	{nat{1234567890}, uppercaseDigits[:10], "1234567890"},
+	{nat{0xdeadbeef}, lowercaseDigits[:16], "deadbeef"},
+	{nat{0xdeadbeef}, uppercaseDigits[:16], "DEADBEEF"},
+	{nat{0x229be7}, lowercaseDigits[:17], "1a2b3c"},
+	{nat{0x309663e6}, uppercaseDigits[:32], "O9COV6"},
 }
 
 func TestString(t *testing.T) {
-	// test invalid base explicitly
+	// test invalid character set explicitly
 	var panicStr string
 	func() {
 		defer func() {
 			panicStr = recover().(string)
 		}()
-		natOne.utoa(1)
+		natOne.string("0")
 	}()
-	if panicStr != "invalid base" {
-		t.Errorf("expected panic for invalid base")
+	if panicStr != "invalid character set length" {
+		t.Errorf("expected panic for invalid character set")
 	}
 
 	for _, a := range strTests {
-		s := string(a.x.utoa(a.b))
+		s := a.x.string(a.c)
 		if s != a.s {
 			t.Errorf("string%+v\n\tgot s = %s; want %s", a, s, a.s)
 		}
 
-		x, b, _, err := nat(nil).scan(strings.NewReader(a.s), a.b, false)
+		x, b, _, err := nat(nil).scan(strings.NewReader(a.s), len(a.c), false)
 		if x.cmp(a.x) != 0 {
 			t.Errorf("scan%+v\n\tgot z = %v; want %v", a, x, a.x)
 		}
-		if b != a.b {
-			t.Errorf("scan%+v\n\tgot b = %d; want %d", a, b, a.b)
+		if b != len(a.c) {
+			t.Errorf("scan%+v\n\tgot b = %d; want %d", a, b, len(a.c))
 		}
 		if err != nil {
 			t.Errorf("scan%+v\n\tgot error = %s", a, err)
@@ -234,7 +236,7 @@ func TestScanPi(t *testing.T) {
 	if err != nil {
 		t.Errorf("scanning pi: %s", err)
 	}
-	if s := string(z.utoa(10)); s != pi {
+	if s := z.decimalString(); s != pi {
 		t.Errorf("scanning pi: got %s", s)
 	}
 }
@@ -263,12 +265,12 @@ func BenchmarkScanPi(b *testing.B) {
 func BenchmarkStringPiParallel(b *testing.B) {
 	var x nat
 	x, _, _, _ = x.scan(strings.NewReader(pi), 0, false)
-	if string(x.utoa(10)) != pi {
+	if x.decimalString() != pi {
 		panic("benchmark incorrect: conversion failed")
 	}
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			x.utoa(10)
+			x.decimalString()
 		}
 	})
 }
@@ -302,14 +304,15 @@ func ScanHelper(b *testing.B, base int, x, y Word) {
 	var z nat
 	z = z.expWW(x, y)
 
-	s := z.utoa(base)
-	if t := itoa(z, base); !bytes.Equal(s, t) {
+	var s string
+	s = z.string(lowercaseDigits[:base])
+	if t := toString(z, lowercaseDigits[:base]); t != s {
 		b.Fatalf("scanning: got %s; want %s", s, t)
 	}
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		z.scan(bytes.NewReader(s), base, false)
+		z.scan(strings.NewReader(s), base, false)
 	}
 }
 
@@ -341,11 +344,11 @@ func StringHelper(b *testing.B, base int, x, y Word) {
 	b.StopTimer()
 	var z nat
 	z = z.expWW(x, y)
-	z.utoa(base) // warm divisor cache
+	z.string(lowercaseDigits[:base]) // warm divisor cache
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		_ = z.utoa(base)
+		_ = z.string(lowercaseDigits[:base])
 	}
 }
 
@@ -369,7 +372,7 @@ func BenchmarkLeafSize16(b *testing.B) { LeafSizeHelper(b, 10, 16) }
 func BenchmarkLeafSize32(b *testing.B) { LeafSizeHelper(b, 10, 32) } // try some large lengths
 func BenchmarkLeafSize64(b *testing.B) { LeafSizeHelper(b, 10, 64) }
 
-func LeafSizeHelper(b *testing.B, base, size int) {
+func LeafSizeHelper(b *testing.B, base Word, size int) {
 	b.StopTimer()
 	originalLeafSize := leafSize
 	resetTable(cacheBase10.table[:])
@@ -379,12 +382,12 @@ func LeafSizeHelper(b *testing.B, base, size int) {
 	for d := 1; d <= 10000; d *= 10 {
 		b.StopTimer()
 		var z nat
-		z = z.expWW(Word(base), Word(d)) // build target number
-		_ = z.utoa(base)                 // warm divisor cache
+		z = z.expWW(base, Word(d))           // build target number
+		_ = z.string(lowercaseDigits[:base]) // warm divisor cache
 		b.StartTimer()
 
 		for i := 0; i < b.N; i++ {
-			_ = z.utoa(base)
+			_ = z.string(lowercaseDigits[:base])
 		}
 	}
 
@@ -405,13 +408,13 @@ func resetTable(table []divisor) {
 }
 
 func TestStringPowers(t *testing.T) {
-	var p Word
-	for b := 2; b <= 16; b++ {
+	var b, p Word
+	for b = 2; b <= 16; b++ {
 		for p = 0; p <= 512; p++ {
-			x := nat(nil).expWW(Word(b), p)
-			xs := x.utoa(b)
-			xs2 := itoa(x, b)
-			if !bytes.Equal(xs, xs2) {
+			x := nat(nil).expWW(b, p)
+			xs := x.string(lowercaseDigits[:b])
+			xs2 := toString(x, lowercaseDigits[:b])
+			if xs != xs2 {
 				t.Errorf("failed at %d ** %d in base %d: %s != %s", b, p, b, xs, xs2)
 			}
 		}

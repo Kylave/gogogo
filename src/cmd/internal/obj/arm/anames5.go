@@ -41,8 +41,6 @@ var cnames5 = []string{
 	"SP",
 	"HREG",
 	"ADDR",
-	"C_TLS_LE",
-	"C_TLS_IE",
 	"TEXTSIZE",
 	"GOK",
 	"NCLASS",

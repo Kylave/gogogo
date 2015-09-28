@@ -174,6 +174,9 @@ func netpollarm(pd *pollDesc, mode int) {
 	unlock(&pd.lock)
 }
 
+// netpolllasterr holds the last error code returned by port_getn to prevent log spamming
+var netpolllasterr int32
+
 // polls for ready network connections
 // returns list of goroutines that become runnable
 func netpoll(block bool) *g {
@@ -191,9 +194,9 @@ func netpoll(block bool) *g {
 retry:
 	var n uint32 = 1
 	if port_getn(portfd, &events[0], uint32(len(events)), &n, wait) < 0 {
-		if e := errno(); e != _EINTR {
+		if e := errno(); e != _EINTR && e != netpolllasterr {
+			netpolllasterr = e
 			print("runtime: port_getn on fd ", portfd, " failed with ", e, "\n")
-			throw("port_getn failed")
 		}
 		goto retry
 	}

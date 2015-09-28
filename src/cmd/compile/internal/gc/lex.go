@@ -26,7 +26,7 @@ var yyprev int
 
 var yylast int
 
-var imported_unsafe bool
+var imported_unsafe int
 
 var (
 	goos    string
@@ -60,12 +60,32 @@ var debugtab = []struct {
 	{"wb", &Debug_wb},                 // print information about write barriers
 }
 
+// Our own isdigit, isspace, isalpha, isalnum that take care
+// of EOF and other out of range arguments.
+func yy_isdigit(c int) bool {
+	return c >= 0 && c <= 0xFF && isdigit(c)
+}
+
+func yy_isspace(c int) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+func yy_isalpha(c int) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
+}
+
+func yy_isalnum(c int) bool {
+	return c >= 0 && c <= 0xFF && isalnum(c)
+}
+
+// Disallow use of isdigit etc.
+
 const (
 	EOF = -1
 )
 
 func usage() {
-	fmt.Printf("usage: compile [options] file.go...\n")
+	fmt.Printf("usage: %cg [options] file.go...\n", Thearch.Thechar)
 	obj.Flagprint(1)
 	Exit(2)
 }
@@ -91,7 +111,7 @@ func doversion() {
 	if p != "" {
 		sep = " "
 	}
-	fmt.Printf("compile version %s%s%s\n", obj.Getgoversion(), sep, p)
+	fmt.Printf("%cg version %s%s%s\n", Thearch.Thechar, obj.Getgoversion(), sep, p)
 	os.Exit(0)
 }
 
@@ -217,11 +237,9 @@ func Main() {
 	obj.Flagcount("y", "debug declarations in canned imports (with -d)", &Debug['y'])
 	var flag_shared int
 	var flag_dynlink bool
-	if Thearch.Thechar == '6' || Thearch.Thechar == '5' {
-		obj.Flagcount("shared", "generate code that can be linked into a shared library", &flag_shared)
-	}
 	if Thearch.Thechar == '6' {
 		obj.Flagcount("largemodel", "generate code that assumes a large memory model", &flag_largemodel)
+		obj.Flagcount("shared", "generate code that can be linked into a shared library", &flag_shared)
 		flag.BoolVar(&flag_dynlink, "dynlink", false, "support references to Go symbols defined in other shared libraries")
 	}
 	obj.Flagstr("cpuprofile", "write cpu profile to `file`", &cpuprofile)
@@ -287,7 +305,7 @@ func Main() {
 
 	Thearch.Betypeinit()
 	if Widthptr == 0 {
-		Fatalf("betypeinit failed")
+		Fatal("betypeinit failed")
 	}
 
 	lexinit()
@@ -299,7 +317,6 @@ func Main() {
 	dclcontext = PEXTERN
 	nerrors = 0
 	lexlineno = 1
-	const BOM = 0xFEFF
 
 	for _, infile = range flag.Args() {
 		linehistpush(infile)
@@ -314,19 +331,19 @@ func Main() {
 
 		curio.peekc = 0
 		curio.peekc1 = 0
-		curio.nlsemi = false
-		curio.eofnl = false
+		curio.nlsemi = 0
+		curio.eofnl = 0
 		curio.last = 0
 
 		// Skip initial BOM if present.
-		if obj.Bgetrune(curio.bin) != BOM {
+		if obj.Bgetrune(curio.bin) != obj.BOM {
 			obj.Bungetrune(curio.bin)
 		}
 
 		block = 1
 		iota_ = -1000000
 
-		imported_unsafe = false
+		imported_unsafe = 0
 
 		yyparse()
 		if nsyntaxerrors != 0 {
@@ -343,7 +360,7 @@ func Main() {
 	mkpackage(localpkg.Name) // final import not used checks
 	lexfini()
 
-	typecheckok = true
+	typecheckok = 1
 	if Debug['f'] != 0 {
 		frame(1)
 	}
@@ -404,10 +421,10 @@ func Main() {
 	if Debug['l'] > 1 {
 		// Typecheck imported function bodies if debug['l'] > 1,
 		// otherwise lazily when used or re-exported.
-		for _, n := range importlist {
-			if n.Func.Inl != nil {
+		for l := importlist; l != nil; l = l.Next {
+			if l.N.Func.Inl != nil {
 				saveerrors()
-				typecheckinl(n)
+				typecheckinl(l.N)
 			}
 		}
 
@@ -418,13 +435,11 @@ func Main() {
 
 	if Debug['l'] != 0 {
 		// Find functions that can be inlined and clone them before walk expands them.
-		visitBottomUp(xtop, func(list []*Node, recursive bool) {
-			// TODO: use a range statement here if the order does not matter
-			for i := len(list) - 1; i >= 0; i-- {
-				n := list[i]
-				if n.Op == ODCLFUNC {
-					caninl(n)
-					inlcalls(n)
+		visitBottomUp(xtop, func(list *NodeList, recursive bool) {
+			for l := list; l != nil; l = l.Next {
+				if l.N.Op == ODCLFUNC {
+					caninl(l.N)
+					inlcalls(l.N)
 				}
 			}
 		})
@@ -464,9 +479,9 @@ func Main() {
 	}
 
 	// Phase 9: Check external declarations.
-	for i, n := range externdcl {
-		if n.Op == ONAME {
-			typecheck(&externdcl[i], Erv)
+	for l := externdcl; l != nil; l = l.Next {
+		if l.N.Op == ONAME {
+			typecheck(&l.N, Erv)
 		}
 	}
 
@@ -567,7 +582,7 @@ func addidir(dir string) {
 // is this path a local name?  begins with ./ or ../ or /
 func islocalname(name string) bool {
 	return strings.HasPrefix(name, "/") ||
-		Ctxt.Windows != 0 && len(name) >= 3 && isAlpha(int(name[0])) && name[1] == ':' && name[2] == '/' ||
+		Ctxt.Windows != 0 && len(name) >= 3 && yy_isalpha(int(name[0])) && name[1] == ':' && name[2] == '/' ||
 		strings.HasPrefix(name, "./") || name == "." ||
 		strings.HasPrefix(name, "../") || name == ".."
 }
@@ -582,11 +597,11 @@ func findpkg(name string) (file string, ok bool) {
 		// if there is an array.6 in the array.a library,
 		// want to find all of array.a, not just array.6.
 		file = fmt.Sprintf("%s.a", name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 		file = fmt.Sprintf("%s.o", name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 		return "", false
@@ -604,11 +619,11 @@ func findpkg(name string) (file string, ok bool) {
 
 	for p := idirs; p != nil; p = p.link {
 		file = fmt.Sprintf("%s/%s.a", p.dir, name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 		file = fmt.Sprintf("%s/%s.o", p.dir, name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 	}
@@ -625,11 +640,11 @@ func findpkg(name string) (file string, ok bool) {
 		}
 
 		file = fmt.Sprintf("%s/pkg/%s_%s%s%s/%s.a", goroot, goos, goarch, suffixsep, suffix, name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 		file = fmt.Sprintf("%s/pkg/%s_%s%s%s/%s.o", goroot, goos, goarch, suffixsep, suffix, name)
-		if _, err := os.Stat(file); err == nil {
+		if obj.Access(file, 0) >= 0 {
 			return file, true
 		}
 	}
@@ -682,7 +697,7 @@ func importfile(f *Val, line int) {
 
 		importpkg = mkpkg(f.U.(string))
 		cannedimports("unsafe.o", unsafeimport)
-		imported_unsafe = true
+		imported_unsafe = 1
 		return
 	}
 
@@ -725,7 +740,7 @@ func importfile(f *Val, line int) {
 
 	// If we already saw that package, feed a dummy statement
 	// to the lexer to avoid parsing export data twice.
-	if importpkg.Imported {
+	if importpkg.Imported != 0 {
 		tag := ""
 		if importpkg.Safe {
 			tag = "safe"
@@ -736,7 +751,7 @@ func importfile(f *Val, line int) {
 		return
 	}
 
-	importpkg.Imported = true
+	importpkg.Imported = 1
 
 	var err error
 	var imp *obj.Biobuf
@@ -783,18 +798,19 @@ func importfile(f *Val, line int) {
 	curio.peekc = 0
 	curio.peekc1 = 0
 	curio.infile = file
-	curio.nlsemi = false
-	typecheckok = true
+	curio.nlsemi = 0
+	typecheckok = 1
 
+	var c int32
 	for {
-		c := getc()
+		c = int32(getc())
 		if c == EOF {
 			break
 		}
 		if c != '$' {
 			continue
 		}
-		c = getc()
+		c = int32(getc())
 		if c == EOF {
 			break
 		}
@@ -820,7 +836,7 @@ func unimportfile() {
 
 	pushedio.bin = nil
 	incannedimport = 0
-	typecheckok = false
+	typecheckok = 0
 }
 
 func cannedimports(file string, cp string) {
@@ -833,44 +849,17 @@ func cannedimports(file string, cp string) {
 	curio.peekc1 = 0
 	curio.infile = file
 	curio.cp = cp
-	curio.nlsemi = false
+	curio.nlsemi = 0
 	curio.importsafe = false
 
-	typecheckok = true
+	typecheckok = 1
 	incannedimport = 1
-}
-
-func isSpace(c int) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
-}
-
-func isAlpha(c int) bool {
-	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z'
-}
-
-func isDigit(c int) bool {
-	return '0' <= c && c <= '9'
-}
-func isAlnum(c int) bool {
-	return isAlpha(c) || isDigit(c)
-}
-
-func plan9quote(s string) string {
-	if s == "" {
-		return "''"
-	}
-	for _, c := range s {
-		if c <= ' ' || c == '\'' {
-			return "'" + strings.Replace(s, "'", "''", -1) + "'"
-		}
-	}
-	return s
 }
 
 func isfrog(c int) bool {
 	// complain about possibly invisible control characters
 	if c < ' ' {
-		return !isSpace(c) // exclude good white space
+		return !yy_isspace(c) // exclude good white space
 	}
 
 	if 0x7f <= c && c <= 0xa0 { // DEL, unicode block including unbreakable space.
@@ -880,8 +869,8 @@ func isfrog(c int) bool {
 }
 
 type Loophack struct {
+	v    int
 	next *Loophack
-	v    bool
 }
 
 var _yylex_lstk *Loophack
@@ -891,6 +880,7 @@ func _yylex(yylval *yySymType) int32 {
 	var escflag int
 	var v int64
 	var cp *bytes.Buffer
+	var rune_ uint
 	var s *Sym
 	var h *Loophack
 	var str string
@@ -899,8 +889,8 @@ func _yylex(yylval *yySymType) int32 {
 
 l0:
 	c := getc()
-	if isSpace(c) {
-		if c == '\n' && curio.nlsemi {
+	if yy_isspace(c) {
+		if c == '\n' && curio.nlsemi != 0 {
 			ungetc(c)
 			if Debug['x'] != 0 {
 				fmt.Printf("lex: implicit semi\n")
@@ -921,20 +911,20 @@ l0:
 		goto talph
 	}
 
-	if isAlpha(c) {
+	if yy_isalpha(c) {
 		cp = &lexbuf
 		cp.Reset()
 		goto talph
 	}
 
-	if isDigit(c) {
+	if yy_isdigit(c) {
 		cp = &lexbuf
 		cp.Reset()
 		if c != '0' {
 			for {
 				cp.WriteByte(byte(c))
 				c = getc()
-				if isDigit(c) {
+				if yy_isdigit(c) {
 					continue
 				}
 				if c == '.' {
@@ -956,7 +946,7 @@ l0:
 			for {
 				cp.WriteByte(byte(c))
 				c = getc()
-				if isDigit(c) {
+				if yy_isdigit(c) {
 					continue
 				}
 				if c >= 'a' && c <= 'f' {
@@ -981,7 +971,7 @@ l0:
 
 		c1 = 0
 		for {
-			if !isDigit(c) {
+			if !yy_isdigit(c) {
 				break
 			}
 			if c < '0' || c > '7' {
@@ -1019,7 +1009,7 @@ l0:
 
 	case '.':
 		c1 = getc()
-		if isDigit(c1) {
+		if yy_isdigit(c1) {
 			cp = &lexbuf
 			cp.Reset()
 			cp.WriteByte(byte(c))
@@ -1053,7 +1043,8 @@ l0:
 			if v < utf8.RuneSelf || escflag != 0 {
 				cp.WriteByte(byte(v))
 			} else {
-				cp.WriteRune(rune(v))
+				rune_ = uint(v)
+				cp.WriteRune(rune(rune_))
 			}
 		}
 
@@ -1110,23 +1101,23 @@ l0:
 	case '/':
 		c1 = getc()
 		if c1 == '*' {
-			nl := false
+			nl := 0
 			for {
 				c = int(getr())
 				if c == '\n' {
-					nl = true
+					nl = 1
 				}
 				for c == '*' {
 					c = int(getr())
 					if c == '/' {
-						if nl {
+						if nl != 0 {
 							ungetc('\n')
 						}
 						goto l0
 					}
 
 					if c == '\n' {
-						nl = true
+						nl = 1
 					}
 				}
 
@@ -1312,15 +1303,15 @@ l0:
 		 *
 		 * when we see the keyword, the next
 		 * non-parenthesized '{' becomes an LBODY.
-		 * loophack is normally false.
-		 * a keyword sets it to true.
-		 * parens push loophack onto a stack and go back to false.
-		 * a '{' with loophack == true becomes LBODY and disables loophack.
+		 * loophack is normally 0.
+		 * a keyword makes it go up to 1.
+		 * parens push loophack onto a stack and go back to 0.
+		 * a '{' with loophack == 1 becomes LBODY and disables loophack.
 		 *
 		 * i said it was clumsy.
 		 */
 	case '(', '[':
-		if loophack || _yylex_lstk != nil {
+		if loophack != 0 || _yylex_lstk != nil {
 			h = new(Loophack)
 			if h == nil {
 				Flusherrors()
@@ -1331,7 +1322,7 @@ l0:
 			h.v = loophack
 			h.next = _yylex_lstk
 			_yylex_lstk = h
-			loophack = false
+			loophack = 0
 		}
 
 		goto lx
@@ -1346,11 +1337,11 @@ l0:
 		goto lx
 
 	case '{':
-		if loophack {
+		if loophack == 1 {
 			if Debug['x'] != 0 {
 				fmt.Printf("%v lex: LBODY\n", Ctxt.Line(int(lexlineno)))
 			}
-			loophack = false
+			loophack = 0
 			return LBODY
 		}
 
@@ -1399,14 +1390,14 @@ talph:
 	for {
 		if c >= utf8.RuneSelf {
 			ungetc(c)
-			r := rune(getr())
+			rune_ = uint(getr())
 
 			// 0xb7 · is used for internal names
-			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && (importpkg == nil || r != 0xb7) {
-				Yyerror("invalid identifier character U+%04x", r)
+			if !unicode.IsLetter(rune(rune_)) && !unicode.IsDigit(rune(rune_)) && (importpkg == nil || rune_ != 0xb7) {
+				Yyerror("invalid identifier character U+%04x", rune_)
 			}
-			cp.WriteRune(r)
-		} else if !isAlnum(c) && c != '_' {
+			cp.WriteRune(rune(rune_))
+		} else if !yy_isalnum(c) && c != '_' {
 			break
 		} else {
 			cp.WriteByte(byte(c))
@@ -1423,7 +1414,7 @@ talph:
 		goto l0
 
 	case LFOR, LIF, LSWITCH, LSELECT:
-		loophack = true // see comment about loophack above
+		loophack = 1 // see comment about loophack above
 	}
 
 	if Debug['x'] != 0 {
@@ -1454,7 +1445,7 @@ casedot:
 	for {
 		cp.WriteByte(byte(c))
 		c = getc()
-		if !isDigit(c) {
+		if !yy_isdigit(c) {
 			break
 		}
 	}
@@ -1479,10 +1470,10 @@ caseep:
 		c = getc()
 	}
 
-	if !isDigit(c) {
+	if !yy_isdigit(c) {
 		Yyerror("malformed floating point constant exponent")
 	}
-	for isDigit(c) {
+	for yy_isdigit(c) {
 		cp.WriteByte(byte(c))
 		c = getc()
 	}
@@ -1552,7 +1543,7 @@ func internString(b []byte) string {
 
 func more(pp *string) bool {
 	p := *pp
-	for p != "" && isSpace(int(p[0])) {
+	for p != "" && yy_isspace(int(p[0])) {
 		p = p[1:]
 	}
 	*pp = p
@@ -1598,7 +1589,7 @@ func getlinepragma() int {
 		}
 
 		if verb == "go:linkname" {
-			if !imported_unsafe {
+			if imported_unsafe == 0 {
 				Yyerror("//go:linkname only allowed in Go files that import \"unsafe\"")
 			}
 			f := strings.Fields(cmd)
@@ -1632,9 +1623,6 @@ func getlinepragma() int {
 		}
 
 		if verb == "go:systemstack" {
-			if compiling_runtime == 0 {
-				Yyerror("//go:systemstack only allowed in runtime")
-			}
 			systemstack = true
 			return c
 		}
@@ -1715,7 +1703,7 @@ func getimpsym(pp *string) string {
 		return ""
 	}
 	i := 0
-	for i < len(p) && !isSpace(int(p[i])) && p[i] != '"' {
+	for i < len(p) && !yy_isspace(int(p[i])) && p[i] != '"' {
 		i++
 	}
 	sym := p[:i]
@@ -1750,7 +1738,9 @@ func pragcgo(text string) {
 	verb := text[3:] // skip "go:"
 
 	if verb == "cgo_dynamic_linker" || verb == "dynlinker" {
-		p, ok := getquoted(&q)
+		var ok bool
+		var p string
+		p, ok = getquoted(&q)
 		if !ok {
 			Yyerror("usage: //go:cgo_dynamic_linker \"path\"")
 			return
@@ -1832,7 +1822,9 @@ func pragcgo(text string) {
 	}
 
 	if verb == "cgo_ldflag" {
-		p, ok := getquoted(&q)
+		var ok bool
+		var p string
+		p, ok = getquoted(&q)
 		if !ok {
 			Yyerror("usage: //go:cgo_ldflag \"arg\"")
 			return
@@ -1866,7 +1858,7 @@ func yyparse() {
 func yylex(yylval *yySymType) int32 {
 	lx := int(_yylex(yylval))
 
-	if curio.nlsemi && lx == EOF {
+	if curio.nlsemi != 0 && lx == EOF {
 		// Treat EOF as "end of line" for the purposes
 		// of inserting a semicolon.
 		lx = ';'
@@ -1884,10 +1876,10 @@ func yylex(yylval *yySymType) int32 {
 		')',
 		'}',
 		']':
-		curio.nlsemi = true
+		curio.nlsemi = 1
 
 	default:
-		curio.nlsemi = false
+		curio.nlsemi = 0
 	}
 
 	// Track last two tokens returned by yylex.
@@ -1942,10 +1934,10 @@ check:
 
 		// insert \n at EOF
 	case EOF:
-		if curio.eofnl || curio.last == '\n' {
+		if curio.eofnl != 0 || curio.last == '\n' {
 			return EOF
 		}
-		curio.eofnl = true
+		curio.eofnl = 1
 		c = '\n'
 		fallthrough
 
@@ -2189,22 +2181,32 @@ var syms = []struct {
 	{"insofaras", LIGNORE, Txxx, OXXX},
 }
 
-// lexinit initializes known symbols and the basic types.
 func lexinit() {
-	for _, s := range syms {
-		lex := s.lexical
-		s1 := Lookup(s.name)
-		s1.Lexical = uint16(lex)
+	var lex int
+	var s *Sym
+	var s1 *Sym
+	var t *Type
+	var etype int
 
-		if etype := s.etype; etype != Txxx {
+	/*
+	 * initialize basic types array
+	 * initialize known symbols
+	 */
+	for i := 0; i < len(syms); i++ {
+		lex = syms[i].lexical
+		s = Lookup(syms[i].name)
+		s.Lexical = uint16(lex)
+
+		etype = syms[i].etype
+		if etype != Txxx {
 			if etype < 0 || etype >= len(Types) {
-				Fatalf("lexinit: %s bad etype", s.name)
+				Fatal("lexinit: %s bad etype", s.Name)
 			}
-			s2 := Pkglookup(s.name, builtinpkg)
-			t := Types[etype]
+			s1 = Pkglookup(syms[i].name, builtinpkg)
+			t = Types[etype]
 			if t == nil {
 				t = typ(etype)
-				t.Sym = s2
+				t.Sym = s1
 
 				if etype != TANY && etype != TSTRING {
 					dowidth(t)
@@ -2212,18 +2214,19 @@ func lexinit() {
 				Types[etype] = t
 			}
 
-			s2.Lexical = LNAME
-			s2.Def = typenod(t)
-			s2.Def.Name = new(Name)
+			s1.Lexical = LNAME
+			s1.Def = typenod(t)
+			s1.Def.Name = new(Name)
 			continue
 		}
 
-		if etype := s.op; etype != OXXX {
-			s2 := Pkglookup(s.name, builtinpkg)
-			s2.Lexical = LNAME
-			s2.Def = Nod(ONAME, nil, nil)
-			s2.Def.Sym = s2
-			s2.Def.Etype = uint8(etype)
+		etype = syms[i].op
+		if etype != OXXX {
+			s1 = Pkglookup(syms[i].name, builtinpkg)
+			s1.Lexical = LNAME
+			s1.Def = Nod(ONAME, nil, nil)
+			s1.Def.Sym = s1
+			s1.Def.Etype = uint8(etype)
 		}
 	}
 
@@ -2236,7 +2239,7 @@ func lexinit() {
 
 	idealbool = typ(TBOOL)
 
-	s := Pkglookup("true", builtinpkg)
+	s = Pkglookup("true", builtinpkg)
 	s.Def = Nodbool(true)
 	s.Def.Sym = Lookup("true")
 	s.Def.Name = new(Name)
@@ -2278,20 +2281,20 @@ func lexinit1() {
 
 	rcvr.Type = typ(TFIELD)
 	rcvr.Type.Type = Ptrto(typ(TSTRUCT))
-	rcvr.Funarg = true
+	rcvr.Funarg = 1
 	in := typ(TSTRUCT)
-	in.Funarg = true
+	in.Funarg = 1
 	out := typ(TSTRUCT)
 	out.Type = typ(TFIELD)
 	out.Type.Type = Types[TSTRING]
-	out.Funarg = true
+	out.Funarg = 1
 	f := typ(TFUNC)
 	*getthis(f) = rcvr
 	*Getoutarg(f) = out
 	*getinarg(f) = in
 	f.Thistuple = 1
 	f.Intuple = 0
-	f.Outnamed = false
+	f.Outnamed = 0
 	f.Outtuple = 1
 	t := typ(TINTER)
 	t.Type = typ(TFIELD)
@@ -2435,121 +2438,136 @@ func lexfini() {
 	nodfp.Sym = Lookup(".fp")
 }
 
-var lexn = map[int]string{
-	LANDAND:    "ANDAND",
-	LANDNOT:    "ANDNOT",
-	LASOP:      "ASOP",
-	LBREAK:     "BREAK",
-	LCASE:      "CASE",
-	LCHAN:      "CHAN",
-	LCOLAS:     "COLAS",
-	LCOMM:      "<-",
-	LCONST:     "CONST",
-	LCONTINUE:  "CONTINUE",
-	LDDD:       "...",
-	LDEC:       "DEC",
-	LDEFAULT:   "DEFAULT",
-	LDEFER:     "DEFER",
-	LELSE:      "ELSE",
-	LEQ:        "EQ",
-	LFALL:      "FALL",
-	LFOR:       "FOR",
-	LFUNC:      "FUNC",
-	LGE:        "GE",
-	LGO:        "GO",
-	LGOTO:      "GOTO",
-	LGT:        "GT",
-	LIF:        "IF",
-	LIMPORT:    "IMPORT",
-	LINC:       "INC",
-	LINTERFACE: "INTERFACE",
-	LLE:        "LE",
-	LLITERAL:   "LITERAL",
-	LLSH:       "LSH",
-	LLT:        "LT",
-	LMAP:       "MAP",
-	LNAME:      "NAME",
-	LNE:        "NE",
-	LOROR:      "OROR",
-	LPACKAGE:   "PACKAGE",
-	LRANGE:     "RANGE",
-	LRETURN:    "RETURN",
-	LRSH:       "RSH",
-	LSELECT:    "SELECT",
-	LSTRUCT:    "STRUCT",
-	LSWITCH:    "SWITCH",
-	LTYPE:      "TYPE",
-	LVAR:       "VAR",
+var lexn = []struct {
+	lex  int
+	name string
+}{
+	{LANDAND, "ANDAND"},
+	{LANDNOT, "ANDNOT"},
+	{LASOP, "ASOP"},
+	{LBREAK, "BREAK"},
+	{LCASE, "CASE"},
+	{LCHAN, "CHAN"},
+	{LCOLAS, "COLAS"},
+	{LCOMM, "<-"},
+	{LCONST, "CONST"},
+	{LCONTINUE, "CONTINUE"},
+	{LDDD, "..."},
+	{LDEC, "DEC"},
+	{LDEFAULT, "DEFAULT"},
+	{LDEFER, "DEFER"},
+	{LELSE, "ELSE"},
+	{LEQ, "EQ"},
+	{LFALL, "FALL"},
+	{LFOR, "FOR"},
+	{LFUNC, "FUNC"},
+	{LGE, "GE"},
+	{LGO, "GO"},
+	{LGOTO, "GOTO"},
+	{LGT, "GT"},
+	{LIF, "IF"},
+	{LIMPORT, "IMPORT"},
+	{LINC, "INC"},
+	{LINTERFACE, "INTERFACE"},
+	{LLE, "LE"},
+	{LLITERAL, "LITERAL"},
+	{LLSH, "LSH"},
+	{LLT, "LT"},
+	{LMAP, "MAP"},
+	{LNAME, "NAME"},
+	{LNE, "NE"},
+	{LOROR, "OROR"},
+	{LPACKAGE, "PACKAGE"},
+	{LRANGE, "RANGE"},
+	{LRETURN, "RETURN"},
+	{LRSH, "RSH"},
+	{LSELECT, "SELECT"},
+	{LSTRUCT, "STRUCT"},
+	{LSWITCH, "SWITCH"},
+	{LTYPE, "TYPE"},
+	{LVAR, "VAR"},
 }
 
 func lexname(lex int) string {
-	if s, ok := lexn[lex]; ok {
-		return s
+	for i := 0; i < len(lexn); i++ {
+		if lexn[i].lex == lex {
+			return lexn[i].name
+		}
 	}
 	return fmt.Sprintf("LEX-%d", lex)
 }
 
-var yytfix = map[string]string{
-	"$end":       "EOF",
-	"LASOP":      "op=",
-	"LBREAK":     "break",
-	"LCASE":      "case",
-	"LCHAN":      "chan",
-	"LCOLAS":     ":=",
-	"LCONST":     "const",
-	"LCONTINUE":  "continue",
-	"LDDD":       "...",
-	"LDEFAULT":   "default",
-	"LDEFER":     "defer",
-	"LELSE":      "else",
-	"LFALL":      "fallthrough",
-	"LFOR":       "for",
-	"LFUNC":      "func",
-	"LGO":        "go",
-	"LGOTO":      "goto",
-	"LIF":        "if",
-	"LIMPORT":    "import",
-	"LINTERFACE": "interface",
-	"LMAP":       "map",
-	"LNAME":      "name",
-	"LPACKAGE":   "package",
-	"LRANGE":     "range",
-	"LRETURN":    "return",
-	"LSELECT":    "select",
-	"LSTRUCT":    "struct",
-	"LSWITCH":    "switch",
-	"LTYPE":      "type",
-	"LVAR":       "var",
-	"LANDAND":    "&&",
-	"LANDNOT":    "&^",
-	"LBODY":      "{",
-	"LCOMM":      "<-",
-	"LDEC":       "--",
-	"LINC":       "++",
-	"LEQ":        "==",
-	"LGE":        ">=",
-	"LGT":        ">",
-	"LLE":        "<=",
-	"LLT":        "<",
-	"LLSH":       "<<",
-	"LRSH":       ">>",
-	"LOROR":      "||",
-	"LNE":        "!=",
+var yytfix = []struct {
+	have string
+	want string
+}{
+	{"$end", "EOF"},
+	{"LASOP", "op="},
+	{"LBREAK", "break"},
+	{"LCASE", "case"},
+	{"LCHAN", "chan"},
+	{"LCOLAS", ":="},
+	{"LCONST", "const"},
+	{"LCONTINUE", "continue"},
+	{"LDDD", "..."},
+	{"LDEFAULT", "default"},
+	{"LDEFER", "defer"},
+	{"LELSE", "else"},
+	{"LFALL", "fallthrough"},
+	{"LFOR", "for"},
+	{"LFUNC", "func"},
+	{"LGO", "go"},
+	{"LGOTO", "goto"},
+	{"LIF", "if"},
+	{"LIMPORT", "import"},
+	{"LINTERFACE", "interface"},
+	{"LMAP", "map"},
+	{"LNAME", "name"},
+	{"LPACKAGE", "package"},
+	{"LRANGE", "range"},
+	{"LRETURN", "return"},
+	{"LSELECT", "select"},
+	{"LSTRUCT", "struct"},
+	{"LSWITCH", "switch"},
+	{"LTYPE", "type"},
+	{"LVAR", "var"},
+	{"LANDAND", "&&"},
+	{"LANDNOT", "&^"},
+	{"LBODY", "{"},
+	{"LCOMM", "<-"},
+	{"LDEC", "--"},
+	{"LINC", "++"},
+	{"LEQ", "=="},
+	{"LGE", ">="},
+	{"LGT", ">"},
+	{"LLE", "<="},
+	{"LLT", "<"},
+	{"LLSH", "<<"},
+	{"LRSH", ">>"},
+	{"LOROR", "||"},
+	{"LNE", "!="},
 	// spell out to avoid confusion with punctuation in error messages
-	"';'": "semicolon or newline",
-	"','": "comma",
+	{"';'", "semicolon or newline"},
+	{"','", "comma"},
 }
 
 func init() {
 	yyErrorVerbose = true
 
+Outer:
 	for i, s := range yyToknames {
 		// Apply yytfix if possible.
-		if fix, ok := yytfix[s]; ok {
-			yyToknames[i] = fix
-		} else if len(s) == 3 && s[0] == '\'' && s[2] == '\'' {
-			// Turn 'x' into x.
+		for _, fix := range yytfix {
+			if s == fix.have {
+				yyToknames[i] = fix.want
+				continue Outer
+			}
+		}
+
+		// Turn 'x' into x.
+		if len(s) == 3 && s[0] == '\'' && s[2] == '\'' {
 			yyToknames[i] = s[1:2]
+			continue
 		}
 	}
 }

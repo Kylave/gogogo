@@ -551,6 +551,13 @@ TEXT runtime·xchg(SB), NOSPLIT, $0-12
 	MOVL	AX, ret+8(FP)
 	RET
 
+TEXT runtime·xchgp1(SB), NOSPLIT, $0-12
+	MOVL	ptr+0(FP), BX
+	MOVL	new+4(FP), AX
+	XCHGL	AX, 0(BX)
+	MOVL	AX, ret+8(FP)
+	RET
+
 TEXT runtime·xchguintptr(SB), NOSPLIT, $0-12
 	JMP	runtime·xchg(SB)
 
@@ -1012,10 +1019,9 @@ endofpage:
 	RET
 
 aes0:
-	// Return scrambled input seed
-	AESENC	X7, X6
-	AESENC	X7, X6
-	MOVL	X6, (DX)
+	// return input seed
+	MOVL	h+4(FP), AX
+	MOVL	AX, (DX)
 	RET
 
 aes16:

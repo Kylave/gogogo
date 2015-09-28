@@ -98,7 +98,7 @@ type NilVal struct{}
 func (v Val) Ctype() int {
 	switch x := v.U.(type) {
 	default:
-		Fatalf("unexpected Ctype for %T", v.U)
+		Fatal("unexpected Ctype for %T", v.U)
 		panic("not reached")
 	case nil:
 		return 0
@@ -125,9 +125,9 @@ type Pkg struct {
 	Path     string // string literal used in import statement
 	Pathsym  *Sym
 	Prefix   string // escaped path for use in symbol table
-	Imported bool   // export data of this package was parsed
-	Exported bool   // import line written in export data
-	Direct   bool   // imported directly
+	Imported uint8  // export data of this package was parsed
+	Exported int8   // import line written in export data
+	Direct   int8   // imported directly
 	Safe     bool   // whether the package is marked as safe
 	Syms     map[string]*Sym
 }
@@ -155,17 +155,18 @@ type Sym struct {
 type Type struct {
 	Etype       uint8
 	Nointerface bool
-	Noalg       bool
+	Noalg       uint8
 	Chan        uint8
 	Trecur      uint8 // to detect loops
-	Printed     bool
+	Printed     uint8
 	Embedded    uint8 // TFIELD embedded type
-	Funarg      bool  // on TSTRUCT and TFIELD
-	Copyany     bool
+	Siggen      uint8
+	Funarg      uint8 // on TSTRUCT and TFIELD
+	Copyany     uint8
 	Local       bool // created in this file
-	Deferwidth  bool
-	Broke       bool // broken type definition.
-	Isddd       bool // TFIELD is ... argument
+	Deferwidth  uint8
+	Broke       uint8 // broken type definition.
+	Isddd       bool  // TFIELD is ... argument
 	Align       uint8
 	Haspointers uint8 // 0 unknown, 1 no, 2 yes
 
@@ -177,7 +178,7 @@ type Type struct {
 	Thistuple int
 	Outtuple  int
 	Intuple   int
-	Outnamed  bool
+	Outnamed  uint8
 
 	Method  *Type
 	Xmethod *Type
@@ -210,15 +211,16 @@ type Type struct {
 	Embedlineno int32 // first use of TFORW as embedded type
 
 	// for TFORW, where to copy the eventual value to
-	Copyto []*Node
+	Copyto *NodeList
 
 	Lastfn *Node // for usefield
 }
 
 type Label struct {
+	Used uint8
 	Sym  *Sym
 	Def  *Node
-	Use  []*Node
+	Use  *NodeList
 	Link *Label
 
 	// for use during gen
@@ -226,8 +228,6 @@ type Label struct {
 	Labelpc  *obj.Prog // pointer to code
 	Breakpc  *obj.Prog // pointer to code
 	Continpc *obj.Prog // pointer to code
-
-	Used bool
 }
 
 type InitEntry struct {
@@ -376,17 +376,18 @@ type Sig struct {
 	type_  *Type
 	mtype  *Type
 	offset int32
+	link   *Sig
 }
 
 type Io struct {
 	infile     string
 	bin        *obj.Biobuf
-	cp         string // used for content when bin==nil
+	nlsemi     int
+	eofnl      int
 	last       int
 	peekc      int
-	peekc1     int // second peekc for ...
-	nlsemi     bool
-	eofnl      bool
+	peekc1     int    // second peekc for ...
+	cp         string // used for content when bin==nil
 	importsafe bool
 }
 
@@ -583,11 +584,11 @@ var maxfltval [NTYPE]*Mpflt
 
 var xtop *NodeList
 
-var externdcl []*Node
+var externdcl *NodeList
 
-var exportlist []*Node
+var exportlist *NodeList
 
-var importlist []*Node // imported functions and methods with inlinable bodies
+var importlist *NodeList // imported functions and methods with inlinable bodies
 
 var funcsyms *NodeList
 
@@ -597,7 +598,7 @@ var incannedimport int
 
 var statuniqgen int // name generator for static temps
 
-var loophack bool
+var loophack int
 
 var iota_ int32
 
@@ -615,7 +616,7 @@ var blockgen int32 // max block number
 
 var block int32 // current block number
 
-var hasdefer bool // flag that curfn has defer statement
+var Hasdefer int // flag that curfn has defer statetment
 
 var Curfn *Node
 
@@ -629,9 +630,15 @@ var typesw *Node
 
 var nblank *Node
 
+var hunk string
+
+var nhunk int32
+
+var thunk int32
+
 var Funcdepth int32
 
-var typecheckok bool
+var typecheckok int
 
 var compiling_runtime int
 
@@ -678,6 +685,8 @@ var nodfp *Node
 
 var Disable_checknil int
 
+var zerosize int64
+
 type Flow struct {
 	Prog   *obj.Prog // actual instruction
 	P1     *Flow     // predecessors of this instruction: p1,
@@ -692,7 +701,7 @@ type Flow struct {
 	Id     int32  // sequence number in flow graph
 	Rpo    int32  // reverse post ordering
 	Loop   uint16 // x5 for every loop
-	Refset bool   // diagnostic generated
+	Refset uint8  // diagnostic generated
 
 	Data interface{} // for use by client
 }

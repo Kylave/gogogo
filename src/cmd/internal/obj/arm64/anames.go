@@ -317,6 +317,8 @@ var Anames = []string{
 	"WORD",
 	"DYNT",
 	"INIT",
+	"BCASE",
+	"CASE",
 	"DWORD",
 	"SIGNAME",
 	"GOK",

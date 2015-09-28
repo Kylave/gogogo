@@ -160,7 +160,7 @@ func fixlbrace(lbr int) {
 	// set up for another one now that we're done.
 	// See comment in lex.C about loophack.
 	if lbr == LBODY {
-		loophack = true
+		loophack = 1
 	}
 }
 
@@ -1057,7 +1057,6 @@ func (yyrcvr *yyParserImpl) Parse(yylex yyLexer) int {
 	var yylval yySymType
 	var yyVAL yySymType
 	var yyDollar []yySymType
-	_ = yyDollar // silence set and not used
 	yyS := make([]yySymType, yyMaxDepth)
 
 	Nerrs := 0   /* number of errors */
@@ -1314,7 +1313,7 @@ yydefault:
 			// no package statement. This allows us to test more
 			// than one invalid import statement in a single file.
 			if nerrors == 0 {
-				Fatalf("phase error in import")
+				Fatal("phase error in import")
 			}
 		}
 	case 15:
@@ -1354,7 +1353,7 @@ yydefault:
 			} else if importpkg.Name != yyDollar[2].sym.Name {
 				Yyerror("conflicting names %s and %s for package %q", importpkg.Name, yyDollar[2].sym.Name, importpkg.Path)
 			}
-			importpkg.Direct = true
+			importpkg.Direct = 1
 			importpkg.Safe = curio.importsafe
 
 			if safemode != 0 && !curio.importsafe {
@@ -3241,7 +3240,7 @@ yydefault:
 			yyDollar[2].node.Func.Inl = yyDollar[3].list
 
 			funcbody(yyDollar[2].node)
-			importlist = append(importlist, yyDollar[2].node)
+			importlist = list(importlist, yyDollar[2].node)
 
 			if Debug['E'] > 0 {
 				fmt.Printf("import [%q] func %v \n", importpkg.Path, yyDollar[2].node)

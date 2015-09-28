@@ -426,6 +426,7 @@ end:						\
 
 // These have 8 added to make the overall frame size a multiple of 16,
 // as required by the ABI. (There is another +8 for the saved LR.)
+CALLFN(·call16, 24 )
 CALLFN(·call32, 40 )
 CALLFN(·call64, 72 )
 CALLFN(·call128, 136 )
@@ -869,8 +870,6 @@ TEXT bytes·Compare(SB),NOSPLIT,$-4-56
 // On exit:
 // R4, R5, and R6 are clobbered
 TEXT runtime·cmpbody<>(SB),NOSPLIT,$-4-0
-	CMP	R2, R3
-	BEQ	samebytes // same starting pointers; compare lengths
 	CMP	R0, R1
 	CSEL    LT, R1, R0, R6 // R6 is min(R0, R1)
 
@@ -1028,5 +1027,3 @@ TEXT runtime·prefetcht2(SB),NOSPLIT,$0-8
 TEXT runtime·prefetchnta(SB),NOSPLIT,$0-8
 	RET
 
-TEXT runtime·sigreturn(SB),NOSPLIT,$0-8
-        RET

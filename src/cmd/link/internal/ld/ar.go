@@ -32,11 +32,13 @@ package ld
 
 const (
 	SARMAG  = 8
+	SARNAME = 16
 	SAR_HDR = 16 + 44
 )
 
 const (
-	ARMAG = "!<arch>\n"
+	ARMAG  = "!<arch>\n"
+	ARFMAG = "`\n"
 )
 
 type ArHdr struct {

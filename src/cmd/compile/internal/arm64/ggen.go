@@ -43,10 +43,10 @@ func defframe(ptxt *obj.Prog) {
 			continue
 		}
 		if n.Class != gc.PAUTO {
-			gc.Fatalf("needzero class %d", n.Class)
+			gc.Fatal("needzero class %d", n.Class)
 		}
 		if n.Type.Width%int64(gc.Widthptr) != 0 || n.Xoffset%int64(gc.Widthptr) != 0 || n.Type.Width == 0 {
-			gc.Fatalf("var %v has size %d offset %d", gc.Nconv(n, obj.FmtLong), int(n.Type.Width), int(n.Xoffset))
+			gc.Fatal("var %v has size %d offset %d", gc.Nconv(n, obj.FmtLong), int(n.Type.Width), int(n.Xoffset))
 		}
 
 		if lo != hi && n.Xoffset+n.Type.Width >= lo-int64(2*gc.Widthreg) {
@@ -151,13 +151,13 @@ func dodiv(op int, nl *gc.Node, nr *gc.Node, res *gc.Node) {
 	t := nl.Type
 
 	t0 := t
-	check := false
+	check := 0
 	if gc.Issigned[t.Etype] {
-		check = true
+		check = 1
 		if gc.Isconst(nl, gc.CTINT) && nl.Int() != -(1<<uint64(t.Width*8-1)) {
-			check = false
+			check = 0
 		} else if gc.Isconst(nr, gc.CTINT) && nr.Int() != -1 {
-			check = false
+			check = 0
 		}
 	}
 
@@ -167,7 +167,7 @@ func dodiv(op int, nl *gc.Node, nr *gc.Node, res *gc.Node) {
 		} else {
 			t = gc.Types[gc.TUINT64]
 		}
-		check = false
+		check = 0
 	}
 
 	a := optoas(gc.ODIV, t)
@@ -206,7 +206,7 @@ func dodiv(op int, nl *gc.Node, nr *gc.Node, res *gc.Node) {
 	gc.Patch(p1, gc.Pc)
 
 	var p2 *obj.Prog
-	if check {
+	if check != 0 {
 		var nm1 gc.Node
 		gc.Nodconst(&nm1, t, -1)
 		gcmp(optoas(gc.OCMP, t), &tr, &nm1)
@@ -250,7 +250,7 @@ func dodiv(op int, nl *gc.Node, nr *gc.Node, res *gc.Node) {
 	}
 
 	gc.Regfree(&tl)
-	if check {
+	if check != 0 {
 		gc.Patch(p2, gc.Pc)
 	}
 }
@@ -262,7 +262,9 @@ func dodiv(op int, nl *gc.Node, nr *gc.Node, res *gc.Node) {
 func cgen_hmul(nl *gc.Node, nr *gc.Node, res *gc.Node) {
 	// largest ullman on left.
 	if nl.Ullman < nr.Ullman {
-		nl, nr = nr, nl
+		tmp := (*gc.Node)(nl)
+		nl = nr
+		nr = tmp
 	}
 
 	t := (*gc.Type)(nl.Type)
@@ -297,7 +299,7 @@ func cgen_hmul(nl *gc.Node, nr *gc.Node, res *gc.Node) {
 		}
 
 	default:
-		gc.Fatalf("cgen_hmul %v", t)
+		gc.Fatal("cgen_hmul %v", t)
 	}
 
 	gc.Cgen(&n1, res)
@@ -497,7 +499,7 @@ func expandchecks(firstp *obj.Prog) {
 			gc.Warnl(int(p.Lineno), "generated nil check")
 		}
 		if p.From.Type != obj.TYPE_REG {
-			gc.Fatalf("invalid nil check %v\n", p)
+			gc.Fatal("invalid nil check %v\n", p)
 		}
 
 		// check is

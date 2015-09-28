@@ -63,6 +63,9 @@ package ppc64
 
 const (
 	thechar   = '9'
+	PtrSize   = 8
+	IntSize   = 8
+	RegSize   = 8
 	MaxAlign  = 32 // max data alignment
 	FuncAlign = 8
 	MINLC     = 4

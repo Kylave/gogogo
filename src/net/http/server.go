@@ -179,9 +179,7 @@ func (c *conn) closeNotify() <-chan bool {
 		c.sr.r = pr
 		c.sr.Unlock()
 		go func() {
-			bufp := copyBufPool.Get().(*[]byte)
-			defer copyBufPool.Put(bufp)
-			_, err := io.CopyBuffer(pw, readSource, *bufp)
+			_, err := io.Copy(pw, readSource)
 			if err == nil {
 				err = io.EOF
 			}
@@ -425,9 +423,7 @@ func (w *response) ReadFrom(src io.Reader) (n int64, err error) {
 		return 0, err
 	}
 	if !ok || !regFile {
-		bufp := copyBufPool.Get().(*[]byte)
-		defer copyBufPool.Put(bufp)
-		return io.CopyBuffer(writerOnly{w}, src, *bufp)
+		return io.Copy(writerOnly{w}, src)
 	}
 
 	// sendfile path:
@@ -490,13 +486,6 @@ var (
 	bufioWriter2kPool sync.Pool
 	bufioWriter4kPool sync.Pool
 )
-
-var copyBufPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 32*1024)
-		return &b
-	},
-}
 
 func bufioWriterPool(size int) *sync.Pool {
 	switch size {
@@ -1874,9 +1863,8 @@ func (sh serverHandler) ServeHTTP(rw ResponseWriter, req *Request) {
 }
 
 // ListenAndServe listens on the TCP network address srv.Addr and then
-// calls Serve to handle requests on incoming connections.
-// If srv.Addr is blank, ":http" is used.
-// ListenAndServe always returns a non-nil error.
+// calls Serve to handle requests on incoming connections.  If
+// srv.Addr is blank, ":http" is used.
 func (srv *Server) ListenAndServe() error {
 	addr := srv.Addr
 	if addr == "" {
@@ -1890,9 +1878,8 @@ func (srv *Server) ListenAndServe() error {
 }
 
 // Serve accepts incoming connections on the Listener l, creating a
-// new service goroutine for each. The service goroutines read requests and
+// new service goroutine for each.  The service goroutines read requests and
 // then call srv.Handler to reply to them.
-// Serve always returns a non-nil error.
 func (srv *Server) Serve(l net.Listener) error {
 	defer l.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
@@ -1970,10 +1957,11 @@ func (s *Server) logf(format string, args ...interface{}) {
 //
 //	func main() {
 //		http.HandleFunc("/hello", HelloServer)
-//		log.Fatal(http.ListenAndServe(":12345", nil))
+//		err := http.ListenAndServe(":12345", nil)
+//		if err != nil {
+//			log.Fatal("ListenAndServe: ", err)
+//		}
 //	}
-//
-// ListenAndServe always returns a non-nil error.
 func ListenAndServe(addr string, handler Handler) error {
 	server := &Server{Addr: addr, Handler: handler}
 	return server.ListenAndServe()
@@ -2001,12 +1989,12 @@ func ListenAndServe(addr string, handler Handler) error {
 //		http.HandleFunc("/", handler)
 //		log.Printf("About to listen on 10443. Go to https://127.0.0.1:10443/")
 //		err := http.ListenAndServeTLS(":10443", "cert.pem", "key.pem", nil)
-//		log.Fatal(err)
+//		if err != nil {
+//			log.Fatal(err)
+//		}
 //	}
 //
 // One can use generate_cert.go in crypto/tls to generate cert.pem and key.pem.
-//
-// ListenAndServeTLS always returns a non-nil error.
 func ListenAndServeTLS(addr string, certFile string, keyFile string, handler Handler) error {
 	server := &Server{Addr: addr, Handler: handler}
 	return server.ListenAndServeTLS(certFile, keyFile)
@@ -2022,8 +2010,6 @@ func ListenAndServeTLS(addr string, certFile string, keyFile string, handler Han
 // certificate, any intermediates, and the CA's certificate.
 //
 // If srv.Addr is blank, ":https" is used.
-//
-// ListenAndServeTLS always returns a non-nil error.
 func (srv *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	addr := srv.Addr
 	if addr == "" {

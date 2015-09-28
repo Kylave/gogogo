@@ -247,16 +247,17 @@ const (
 type rtype struct {
 	size          uintptr
 	ptrdata       uintptr
-	hash          uint32   // hash of type; avoids computation in hash tables
-	_             uint8    // unused/padding
-	align         uint8    // alignment of variable with this type
-	fieldAlign    uint8    // alignment of struct field with this type
-	kind          uint8    // enumeration for C
-	alg           *typeAlg // algorithm table
-	gcdata        *byte    // garbage collection data
-	string        *string  // string form; unnecessary but undeniably useful
-	*uncommonType          // (relatively) uncommon fields
-	ptrToThis     *rtype   // type for pointer to this type, if used in binary or has methods
+	hash          uint32         // hash of type; avoids computation in hash tables
+	_             uint8          // unused/padding
+	align         uint8          // alignment of variable with this type
+	fieldAlign    uint8          // alignment of struct field with this type
+	kind          uint8          // enumeration for C
+	alg           *typeAlg       // algorithm table
+	gcdata        *byte          // garbage collection data
+	string        *string        // string form; unnecessary but undeniably useful
+	*uncommonType                // (relatively) uncommon fields
+	ptrToThis     *rtype         // type for pointer to this type, if used in binary or has methods
+	zero          unsafe.Pointer // pointer to zero value
 }
 
 // a copy of runtime.typeAlg
@@ -347,7 +348,6 @@ type mapType struct {
 	indirectvalue uint8  // store ptr to value instead of value itself
 	bucketsize    uint16 // size of bucket
 	reflexivekey  bool   // true if k==k for all keys
-	needkeyupdate bool   // true if we need to update key on an overwrite
 }
 
 // ptrType represents a pointer type.
@@ -1526,7 +1526,6 @@ func MapOf(key, elem Type) Type {
 	}
 	mt.bucketsize = uint16(mt.bucket.size)
 	mt.reflexivekey = isReflexive(ktyp)
-	mt.needkeyupdate = needKeyUpdate(ktyp)
 	mt.uncommonType = nil
 	mt.ptrToThis = nil
 
@@ -1668,33 +1667,6 @@ func isReflexive(t *rtype) bool {
 	default:
 		// Func, Map, Slice, Invalid
 		panic("isReflexive called on non-key type " + t.String())
-	}
-}
-
-// needKeyUpdate reports whether map overwrites require the key to be copied.
-func needKeyUpdate(t *rtype) bool {
-	switch t.Kind() {
-	case Bool, Int, Int8, Int16, Int32, Int64, Uint, Uint8, Uint16, Uint32, Uint64, Uintptr, Chan, Ptr, UnsafePointer:
-		return false
-	case Float32, Float64, Complex64, Complex128, Interface, String:
-		// Float keys can be updated from +0 to -0.
-		// String keys can be updated to use a smaller backing store.
-		// Interfaces might have floats of strings in them.
-		return true
-	case Array:
-		tt := (*arrayType)(unsafe.Pointer(t))
-		return needKeyUpdate(tt.elem)
-	case Struct:
-		tt := (*structType)(unsafe.Pointer(t))
-		for _, f := range tt.fields {
-			if needKeyUpdate(f.typ) {
-				return true
-			}
-		}
-		return false
-	default:
-		// Func, Map, Slice, Invalid
-		panic("needKeyUpdate called on non-key type " + t.String())
 	}
 }
 

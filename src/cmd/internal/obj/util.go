@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -165,6 +166,17 @@ func Brdstr(b *Biobuf, delim int, cut int) string {
 	return s
 }
 
+func Access(name string, mode int) int {
+	if mode != 0 {
+		panic("bad access")
+	}
+	_, err := os.Stat(name)
+	if err != nil {
+		return -1
+	}
+	return 0
+}
+
 func Blinelen(b *Biobuf) int {
 	return b.linelen
 }
@@ -200,14 +212,10 @@ func Getgoos() string {
 	return envOr("GOOS", defaultGOOS)
 }
 
-func Getgoarm() int32 {
+func Getgoarm() string {
 	switch v := envOr("GOARM", defaultGOARM); v {
-	case "5":
-		return 5
-	case "6":
-		return 6
-	case "7":
-		return 7
+	case "5", "6", "7":
+		return v
 	}
 	// Fail here, rather than validate at multiple call sites.
 	log.Fatalf("Invalid GOARM value. Must be 5, 6, or 7.")
@@ -225,6 +233,11 @@ func Getgoextlinkenabled() string {
 
 func Getgoversion() string {
 	return version
+}
+
+func Atoi(s string) int {
+	i, _ := strconv.Atoi(s)
+	return i
 }
 
 func (p *Prog) Line() string {
@@ -457,25 +470,13 @@ func Mconv(a *Addr) string {
 		}
 
 	case NAME_EXTERN:
-		if a.Sym != nil {
-			str = fmt.Sprintf("%s%s(SB)", a.Sym.Name, offConv(a.Offset))
-		} else {
-			str = fmt.Sprintf("%s(SB)", offConv(a.Offset))
-		}
+		str = fmt.Sprintf("%s%s(SB)", a.Sym.Name, offConv(a.Offset))
 
 	case NAME_GOTREF:
-		if a.Sym != nil {
-			str = fmt.Sprintf("%s%s@GOT(SB)", a.Sym.Name, offConv(a.Offset))
-		} else {
-			str = fmt.Sprintf("%s@GOT(SB)", offConv(a.Offset))
-		}
+		str = fmt.Sprintf("%s%s@GOT(SB)", a.Sym.Name, offConv(a.Offset))
 
 	case NAME_STATIC:
-		if a.Sym != nil {
-			str = fmt.Sprintf("%s<>%s(SB)", a.Sym.Name, offConv(a.Offset))
-		} else {
-			str = fmt.Sprintf("<>%s(SB)", offConv(a.Offset))
-		}
+		str = fmt.Sprintf("%s<>%s(SB)", a.Sym.Name, offConv(a.Offset))
 
 	case NAME_AUTO:
 		if a.Sym != nil {

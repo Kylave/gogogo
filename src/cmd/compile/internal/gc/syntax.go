@@ -81,7 +81,7 @@ func (n *Node) SetVal(v Val) {
 	if n.hasVal == -1 {
 		Debug['h'] = 1
 		Dump("have Opt", n)
-		Fatalf("have Opt")
+		Fatal("have Opt")
 	}
 	n.hasVal = +1
 	n.E = v.U
@@ -104,7 +104,7 @@ func (n *Node) SetOpt(x interface{}) {
 	if n.hasVal == +1 {
 		Debug['h'] = 1
 		Dump("have Val", n)
-		Fatalf("have Val")
+		Fatal("have Val")
 	}
 	n.hasVal = -1
 	n.E = x
@@ -409,10 +409,9 @@ func list(l *NodeList, n *Node) *NodeList {
 	return concat(l, list1(n))
 }
 
-// listsort sorts *l in place according to the comparison function lt.
-// The algorithm expects lt(a, b) to be equivalent to a < b.
+// listsort sorts *l in place according to the 3-way comparison function f.
 // The algorithm is mergesort, so it is guaranteed to be O(n log n).
-func listsort(l **NodeList, lt func(*Node, *Node) bool) {
+func listsort(l **NodeList, f func(*Node, *Node) int) {
 	if *l == nil || (*l).Next == nil {
 		return
 	}
@@ -437,10 +436,10 @@ func listsort(l **NodeList, lt func(*Node, *Node) bool) {
 	(*l).End = l1
 
 	l1 = *l
-	listsort(&l1, lt)
-	listsort(&l2, lt)
+	listsort(&l1, f)
+	listsort(&l2, f)
 
-	if lt(l1.N, l2.N) {
+	if f(l1.N, l2.N) < 0 {
 		*l = l1
 	} else {
 		*l = l2
@@ -452,7 +451,7 @@ func listsort(l **NodeList, lt func(*Node, *Node) bool) {
 
 	var le *NodeList
 	for (l1 != nil) && (l2 != nil) {
-		for (l1.Next != nil) && lt(l1.Next.N, l2.N) {
+		for (l1.Next != nil) && f(l1.Next.N, l2.N) < 0 {
 			l1 = l1.Next
 		}
 

@@ -6,6 +6,7 @@ package gc
 
 import (
 	"cmd/internal/obj"
+	"fmt"
 	"sort"
 	"strconv"
 )
@@ -152,9 +153,9 @@ func typecheckswitch(n *Node) {
 						// reset to original type
 						ll.N = n.Left.Right
 					case ll.N.Type.Etype != TINTER && t.Etype == TINTER && !implements(ll.N.Type, t, &missing, &have, &ptr):
-						if have != nil && !missing.Broke && !have.Broke {
+						if have != nil && missing.Broke == 0 && have.Broke == 0 {
 							Yyerror("impossible type switch case: %v cannot have dynamic type %v"+" (wrong type for %v method)\n\thave %v%v\n\twant %v%v", Nconv(n.Left.Right, obj.FmtLong), ll.N.Type, missing.Sym, have.Sym, Tconv(have.Type, obj.FmtShort), missing.Sym, Tconv(missing.Type, obj.FmtShort))
-						} else if !missing.Broke {
+						} else if missing.Broke == 0 {
 							Yyerror("impossible type switch case: %v cannot have dynamic type %v"+" (missing %v method)", Nconv(n.Left.Right, obj.FmtLong), ll.N.Type, missing.Sym)
 						}
 					}
@@ -347,7 +348,7 @@ func casebody(sw *Node, typeswvar *Node) {
 		n := l.N
 		setlineno(n)
 		if n.Op != OXCASE {
-			Fatalf("casebody %v", Oconv(int(n.Op), 0))
+			Fatal("casebody %v", Oconv(int(n.Op), 0))
 		}
 		n.Op = OCASE
 		needvar := count(n.List) != 1 || n.List.N.Op == OLITERAL
@@ -678,7 +679,7 @@ func (s *typeSwitch) walkCases(cc []*caseClause) *Node {
 		for _, c := range cc {
 			n := c.node
 			if c.typ != caseKindTypeConst {
-				Fatalf("typeSwitch walkCases")
+				Fatal("typeSwitch walkCases")
 			}
 			a := Nod(OIF, nil, nil)
 			a.Left = Nod(OEQ, s.hashname, Nodintconst(int64(c.hash)))
@@ -804,4 +805,44 @@ func (x caseClauseByType) Less(i, j int) bool {
 
 	// sort by ordinal
 	return c1.ordinal < c2.ordinal
+}
+
+func dumpcase(cc []*caseClause) {
+	for _, c := range cc {
+		switch c.typ {
+		case caseKindDefault:
+			fmt.Printf("case-default\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+
+		case caseKindExprConst:
+			fmt.Printf("case-exprconst\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+
+		case caseKindExprVar:
+			fmt.Printf("case-exprvar\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+			fmt.Printf("\top=%v\n", Oconv(int(c.node.Left.Op), 0))
+
+		case caseKindTypeNil:
+			fmt.Printf("case-typenil\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+
+		case caseKindTypeConst:
+			fmt.Printf("case-typeconst\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+			fmt.Printf("\thash=%x\n", c.hash)
+
+		case caseKindTypeVar:
+			fmt.Printf("case-typevar\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+
+		default:
+			fmt.Printf("case-???\n")
+			fmt.Printf("\tord=%d\n", c.ordinal)
+			fmt.Printf("\top=%v\n", Oconv(int(c.node.Left.Op), 0))
+			fmt.Printf("\thash=%x\n", c.hash)
+		}
+	}
+
+	fmt.Printf("\n")
 }

@@ -55,9 +55,6 @@ func detectDevID() string {
 		if !bytes.Contains(line, []byte("iPhone Developer")) {
 			continue
 		}
-		if bytes.Contains(line, []byte("REVOKED")) {
-			continue
-		}
 		fields := bytes.Fields(line)
 		return string(fields[1])
 	}

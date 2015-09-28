@@ -51,14 +51,6 @@ var experimental = map[string]bool{}
 // setTrueCount record how many flags are explicitly set to true.
 var setTrueCount int
 
-// dirsRun and filesRun indicate whether the vet is applied to directory or
-// file targets. The distinction affects which checks are run.
-var dirsRun, filesRun bool
-
-// includesNonTest indicates whether the vet is applied to non-test targets.
-// Certain checks are relevant only if they touch both test and non-test files.
-var includesNonTest bool
-
 // A triState is a boolean that knows whether it has been set to either true or false.
 // It is used to identify if a flag appears; the standard boolean flag cannot
 // distinguish missing from unset. It also satisfies flag.Value.
@@ -215,6 +207,8 @@ func main() {
 	if flag.NArg() == 0 {
 		Usage()
 	}
+	dirs := false
+	files := false
 	for _, name := range flag.Args() {
 		// Is it a directory?
 		fi, err := os.Stat(name)
@@ -223,18 +217,15 @@ func main() {
 			continue
 		}
 		if fi.IsDir() {
-			dirsRun = true
+			dirs = true
 		} else {
-			filesRun = true
-			if !strings.HasSuffix(name, "_test.go") {
-				includesNonTest = true
-			}
+			files = true
 		}
 	}
-	if dirsRun && filesRun {
+	if dirs && files {
 		Usage()
 	}
-	if dirsRun {
+	if dirs {
 		for _, name := range flag.Args() {
 			walkDir(name)
 		}

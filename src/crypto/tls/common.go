@@ -255,8 +255,7 @@ type Config struct {
 
 	// Certificates contains one or more certificate chains
 	// to present to the other side of the connection.
-	// Server configurations must include at least one certificate
-	// or else set GetCertificate.
+	// Server configurations must include at least one certificate.
 	Certificates []Certificate
 
 	// NameToCertificate maps from a certificate name to an element of

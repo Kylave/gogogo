@@ -56,9 +56,6 @@ func (r *request) parseParams() {
 			return
 		}
 		text = text[n:]
-		if int(keyLen)+int(valLen) > len(text) {
-			return
-		}
 		key := readString(text, keyLen)
 		text = text[keyLen:]
 		val := readString(text, valLen)

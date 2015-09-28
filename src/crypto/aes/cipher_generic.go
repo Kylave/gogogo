@@ -17,11 +17,3 @@ func decryptBlock(xk []uint32, dst, src []byte) {
 func expandKey(key []byte, enc, dec []uint32) {
 	expandKeyGo(key, enc, dec)
 }
-
-func hasGCMAsm() bool {
-	return false
-}
-
-type aesCipherGCM struct {
-	aesCipher
-}

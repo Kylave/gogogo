@@ -1054,7 +1054,7 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a href=x`,
-			context{state: stateURL, delim: delimSpaceOrTagEnd, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSpaceOrTagEnd, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href=x `,
@@ -1070,7 +1070,7 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a href ='`,
-			context{state: stateURL, delim: delimSingleQuote, attr: attrURL},
+			context{state: stateURL, delim: delimSingleQuote},
 		},
 		{
 			`<a href=''`,
@@ -1078,7 +1078,7 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a href= "`,
-			context{state: stateURL, delim: delimDoubleQuote, attr: attrURL},
+			context{state: stateURL, delim: delimDoubleQuote},
 		},
 		{
 			`<a href=""`,
@@ -1090,35 +1090,35 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a HREF='http:`,
-			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a Href='/`,
-			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href='"`,
-			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href="'`,
-			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href='&apos;`,
-			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSingleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href="&quot;`,
-			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href="&#34;`,
-			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a href=&quot;`,
-			context{state: stateURL, delim: delimSpaceOrTagEnd, urlPart: urlPartPreQuery, attr: attrURL},
+			context{state: stateURL, delim: delimSpaceOrTagEnd, urlPart: urlPartPreQuery},
 		},
 		{
 			`<img alt="1">`,
@@ -1138,83 +1138,83 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a onclick="`,
-			context{state: stateJS, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="//foo`,
-			context{state: stateJSLineCmt, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSLineCmt, delim: delimDoubleQuote},
 		},
 		{
 			"<a onclick='//\n",
-			context{state: stateJS, delim: delimSingleQuote, attr: attrScript},
+			context{state: stateJS, delim: delimSingleQuote},
 		},
 		{
 			"<a onclick='//\r\n",
-			context{state: stateJS, delim: delimSingleQuote, attr: attrScript},
+			context{state: stateJS, delim: delimSingleQuote},
 		},
 		{
 			"<a onclick='//\u2028",
-			context{state: stateJS, delim: delimSingleQuote, attr: attrScript},
+			context{state: stateJS, delim: delimSingleQuote},
 		},
 		{
 			`<a onclick="/*`,
-			context{state: stateJSBlockCmt, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSBlockCmt, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/*/`,
-			context{state: stateJSBlockCmt, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSBlockCmt, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/**/`,
-			context{state: stateJS, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote},
 		},
 		{
 			`<a onkeypress="&quot;`,
-			context{state: stateJSDqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSDqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick='&quot;foo&quot;`,
-			context{state: stateJS, delim: delimSingleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimSingleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<a onclick=&#39;foo&#39;`,
-			context{state: stateJS, delim: delimSpaceOrTagEnd, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimSpaceOrTagEnd, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<a onclick=&#39;foo`,
-			context{state: stateJSSqStr, delim: delimSpaceOrTagEnd, attr: attrScript},
+			context{state: stateJSSqStr, delim: delimSpaceOrTagEnd},
 		},
 		{
 			`<a onclick="&quot;foo'`,
-			context{state: stateJSDqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSDqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="'foo&quot;`,
-			context{state: stateJSSqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSSqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<A ONCLICK="'`,
-			context{state: stateJSSqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSSqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/`,
-			context{state: stateJSRegexp, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSRegexp, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="'foo'`,
-			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<a onclick="'foo\'`,
-			context{state: stateJSSqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSSqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="'foo\'`,
-			context{state: stateJSSqStr, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSSqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/foo/`,
-			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<script>/foo/ /=`,
@@ -1222,111 +1222,111 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a onclick="1 /foo`,
-			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<a onclick="1 /*c*/ /foo`,
-			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<a onclick="/foo[/]`,
-			context{state: stateJSRegexp, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSRegexp, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/foo\/`,
-			context{state: stateJSRegexp, delim: delimDoubleQuote, attr: attrScript},
+			context{state: stateJSRegexp, delim: delimDoubleQuote},
 		},
 		{
 			`<a onclick="/foo/`,
-			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp, attr: attrScript},
+			context{state: stateJS, delim: delimDoubleQuote, jsCtx: jsCtxDivOp},
 		},
 		{
 			`<input checked style="`,
-			context{state: stateCSS, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="//`,
-			context{state: stateCSSLineCmt, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSLineCmt, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="//</script>`,
-			context{state: stateCSSLineCmt, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSLineCmt, delim: delimDoubleQuote},
 		},
 		{
 			"<a style='//\n",
-			context{state: stateCSS, delim: delimSingleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimSingleQuote},
 		},
 		{
 			"<a style='//\r",
-			context{state: stateCSS, delim: delimSingleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimSingleQuote},
 		},
 		{
 			`<a style="/*`,
-			context{state: stateCSSBlockCmt, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSBlockCmt, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="/*/`,
-			context{state: stateCSSBlockCmt, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSBlockCmt, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="/**/`,
-			context{state: stateCSS, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: '`,
-			context{state: stateCSSSqStr, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSSqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: &quot;`,
-			context{state: stateCSSDqStr, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSDqStr, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: '/foo?img=`,
-			context{state: stateCSSSqStr, delim: delimDoubleQuote, urlPart: urlPartQueryOrFrag, attr: attrStyle},
+			context{state: stateCSSSqStr, delim: delimDoubleQuote, urlPart: urlPartQueryOrFrag},
 		},
 		{
 			`<a style="background: '/`,
-			context{state: stateCSSSqStr, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSSqStr, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url(&#x22;/`,
-			context{state: stateCSSDqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSDqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url('/`,
-			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url('/)`,
-			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url('/ `,
-			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSSqURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url(/`,
-			context{state: stateCSSURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery, attr: attrStyle},
+			context{state: stateCSSURL, delim: delimDoubleQuote, urlPart: urlPartPreQuery},
 		},
 		{
 			`<a style="background: url( `,
-			context{state: stateCSSURL, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSSURL, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: url( /image?name=`,
-			context{state: stateCSSURL, delim: delimDoubleQuote, urlPart: urlPartQueryOrFrag, attr: attrStyle},
+			context{state: stateCSSURL, delim: delimDoubleQuote, urlPart: urlPartQueryOrFrag},
 		},
 		{
 			`<a style="background: url(x)`,
-			context{state: stateCSS, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: url('x'`,
-			context{state: stateCSS, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimDoubleQuote},
 		},
 		{
 			`<a style="background: url( x `,
-			context{state: stateCSS, delim: delimDoubleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimDoubleQuote},
 		},
 		{
 			`<!-- foo`,
@@ -1466,7 +1466,7 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<a svg:style='`,
-			context{state: stateCSS, delim: delimSingleQuote, attr: attrStyle},
+			context{state: stateCSS, delim: delimSingleQuote},
 		},
 		{
 			`<svg:font-face`,
@@ -1474,11 +1474,7 @@ func TestEscapeText(t *testing.T) {
 		},
 		{
 			`<svg:a svg:onclick="`,
-			context{state: stateJS, delim: delimDoubleQuote, attr: attrScript},
-		},
-		{
-			`<svg:a svg:onclick="x()">`,
-			context{},
+			context{state: stateJS, delim: delimDoubleQuote},
 		},
 	}
 
