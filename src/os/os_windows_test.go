@@ -3,10 +3,14 @@ package os_test
 import (
 	"io/ioutil"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
+
+var supportJunctionLinks = true
 
 func init() {
 	tmpdir, err := ioutil.TempDir("", "symtest")
@@ -16,14 +20,18 @@ func init() {
 	defer os.RemoveAll(tmpdir)
 
 	err = os.Symlink("target", filepath.Join(tmpdir, "symlink"))
-	if err == nil {
-		return
+	if err != nil {
+		err = err.(*os.LinkError).Err
+		switch err {
+		case syscall.EWINDOWS, syscall.ERROR_PRIVILEGE_NOT_HELD:
+			supportsSymlinks = false
+		}
 	}
+	defer os.Remove("target")
 
-	err = err.(*os.LinkError).Err
-	switch err {
-	case syscall.EWINDOWS, syscall.ERROR_PRIVILEGE_NOT_HELD:
-		supportsSymlinks = false
+	b, _ := osexec.Command("cmd", "/c", "mklink", "/?").Output()
+	if !strings.Contains(string(b), " /J ") {
+		supportJunctionLinks = false
 	}
 }
 
@@ -77,5 +85,64 @@ func TestSameWindowsFile(t *testing.T) {
 	}
 	if !os.SameFile(ia1, ia3) {
 		t.Errorf("files should be same")
+	}
+}
+
+func TestStatJunctionLink(t *testing.T) {
+	if !supportJunctionLinks {
+		t.Skip("skipping because junction links are not supported")
+	}
+
+	dir, err := ioutil.TempDir("", "go-build")
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	link := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-link")
+
+	output, err := osexec.Command("cmd", "/c", "mklink", "/J", link, dir).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to run mklink %v %v: %v %q", link, dir, err, output)
+	}
+	defer os.Remove(link)
+
+	fi, err := os.Stat(link)
+	if err != nil {
+		t.Fatalf("failed to stat link %v: %v", link, err)
+	}
+	expected := filepath.Base(dir)
+	got := fi.Name()
+	if !fi.IsDir() || expected != got {
+		t.Fatalf("link should point to %v but points to %v instead", expected, got)
+	}
+}
+
+func TestStartProcessAttr(t *testing.T) {
+	p, err := os.StartProcess(os.Getenv("COMSPEC"), []string{"/c", "cd"}, new(os.ProcAttr))
+	if err != nil {
+		return
+	}
+	defer p.Wait()
+	t.Fatalf("StartProcess expected to fail, but succeeded.")
+}
+
+func TestShareNotExistError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow test that uses network; skipping")
+	}
+	_, err := os.Stat(`\\no_such_server\no_such_share\no_such_file`)
+	if err == nil {
+		t.Fatal("stat succeeded, but expected to fail")
+	}
+	if !os.IsNotExist(err) {
+		t.Fatalf("os.Stat failed with %q, but os.IsNotExist(err) is false", err)
+	}
+}
+
+func TestBadNetPathError(t *testing.T) {
+	const ERROR_BAD_NETPATH = syscall.Errno(53)
+	if !os.IsNotExist(ERROR_BAD_NETPATH) {
+		t.Fatal("os.IsNotExist(syscall.Errno(53)) is false, but want true")
 	}
 }
