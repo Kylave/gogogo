@@ -1508,9 +1508,7 @@ func elfshbits(sect *Section) *ElfShdr {
 	}
 	sh.addralign = uint64(sect.Align)
 	sh.size = sect.Length
-	if sect.Name != ".tbss" || goos == "android" {
-		sh.off = sect.Seg.Fileoff + sect.Vaddr - sect.Seg.Vaddr
-	}
+	sh.off = sect.Seg.Fileoff + sect.Vaddr - sect.Seg.Vaddr
 
 	return sh
 }
@@ -1690,18 +1688,9 @@ func doelf() {
 	}
 	Addstring(shstrtab, ".elfdata")
 	Addstring(shstrtab, ".rodata")
-	if Buildmode == BuildmodeShared || Buildmode == BuildmodeCShared {
-		Addstring(shstrtab, ".data.rel.ro")
-	}
-	// See the comment about data.rel.ro.FOO section names in data.go.
-	relro_prefix := ""
-
-	if UseRelro() {
-		relro_prefix = ".data.rel.ro"
-	}
-	Addstring(shstrtab, relro_prefix+".typelink")
-	Addstring(shstrtab, relro_prefix+".gosymtab")
-	Addstring(shstrtab, relro_prefix+".gopclntab")
+	Addstring(shstrtab, ".typelink")
+	Addstring(shstrtab, ".gosymtab")
+	Addstring(shstrtab, ".gopclntab")
 
 	if Linkmode == LinkExternal {
 		Debug['d'] = 1
@@ -1710,26 +1699,20 @@ func doelf() {
 		case '6', '7', '9':
 			Addstring(shstrtab, ".rela.text")
 			Addstring(shstrtab, ".rela.rodata")
-			Addstring(shstrtab, ".rela"+relro_prefix+".typelink")
-			Addstring(shstrtab, ".rela"+relro_prefix+".gosymtab")
-			Addstring(shstrtab, ".rela"+relro_prefix+".gopclntab")
+			Addstring(shstrtab, ".rela.typelink")
+			Addstring(shstrtab, ".rela.gosymtab")
+			Addstring(shstrtab, ".rela.gopclntab")
 			Addstring(shstrtab, ".rela.noptrdata")
 			Addstring(shstrtab, ".rela.data")
-			if UseRelro() {
-				Addstring(shstrtab, ".rela.data.rel.ro")
-			}
 
 		default:
 			Addstring(shstrtab, ".rel.text")
 			Addstring(shstrtab, ".rel.rodata")
-			Addstring(shstrtab, ".rel"+relro_prefix+".typelink")
-			Addstring(shstrtab, ".rel"+relro_prefix+".gosymtab")
-			Addstring(shstrtab, ".rel"+relro_prefix+".gopclntab")
+			Addstring(shstrtab, ".rel.typelink")
+			Addstring(shstrtab, ".rel.gosymtab")
+			Addstring(shstrtab, ".rel.gopclntab")
 			Addstring(shstrtab, ".rel.noptrdata")
 			Addstring(shstrtab, ".rel.data")
-			if UseRelro() {
-				Addstring(shstrtab, ".rel.data.rel.ro")
-			}
 		}
 
 		// add a .note.GNU-stack section to mark the stack as non-executable
@@ -1739,6 +1722,10 @@ func doelf() {
 			Addstring(shstrtab, ".note.go.abihash")
 			Addstring(shstrtab, ".note.go.pkg-list")
 			Addstring(shstrtab, ".note.go.deps")
+		}
+
+		if buildid != "" {
+			Addstring(shstrtab, ".note.go.buildid")
 		}
 	}
 
@@ -2300,20 +2287,12 @@ func Asmbelf(symo int64) {
 		// Do not emit PT_TLS for OpenBSD since ld.so(1) does
 		// not currently support it. This is handled
 		// appropriately in runtime/cgo.
-		if HEADTYPE != obj.Hopenbsd {
-			tlssize := uint64(0)
-			for sect := Segdata.Sect; sect != nil; sect = sect.Next {
-				if sect.Name == ".tbss" {
-					tlssize = sect.Length
-				}
-			}
-			if tlssize != 0 {
-				ph := newElfPhdr()
-				ph.type_ = PT_TLS
-				ph.flags = PF_R
-				ph.memsz = tlssize
-				ph.align = uint64(Thearch.Regsize)
-			}
+		if Ctxt.Tlsoffset != 0 && HEADTYPE != obj.Hopenbsd {
+			ph := newElfPhdr()
+			ph.type_ = PT_TLS
+			ph.flags = PF_R
+			ph.memsz = uint64(-Ctxt.Tlsoffset)
+			ph.align = uint64(Thearch.Regsize)
 		}
 	}
 
@@ -2369,6 +2348,16 @@ elfobj:
 		sh.type_ = SHT_PROGBITS
 		sh.addralign = 1
 		sh.flags = 0
+	}
+
+	// generate .tbss section for dynamic internal linking (except for OpenBSD)
+	// external linking generates .tbss in data.c
+	if Linkmode == LinkInternal && Debug['d'] == 0 && HEADTYPE != obj.Hopenbsd {
+		sh := elfshname(".tbss")
+		sh.type_ = SHT_NOBITS
+		sh.addralign = uint64(Thearch.Regsize)
+		sh.size = uint64(-Ctxt.Tlsoffset)
+		sh.flags = SHF_ALLOC | SHF_TLS | SHF_WRITE
 	}
 
 	if Debug['s'] == 0 {

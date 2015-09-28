@@ -147,6 +147,7 @@ func OPBIT(x uint32) uint32 {
 const (
 	LFROM = 1 << 0
 	LTO   = 1 << 1
+	LPOOL = 1 << 2
 )
 
 var optab = []Optab{
@@ -467,6 +468,8 @@ var optab = []Optab{
 	{AFCCMPS, C_COND, C_REG, C_VCON, 57, 4, 0, 0, 0},
 	{AFCSELD, C_COND, C_REG, C_FREG, 18, 4, 0, 0, 0},
 	{AFCVTSD, C_FREG, C_NONE, C_FREG, 29, 4, 0, 0, 0},
+	{ACASE, C_REG, C_NONE, C_REG, 62, 4 * 4, 0, 0, 0},
+	{ABCASE, C_NONE, C_NONE, C_SBRA, 63, 4, 0, 0, 0},
 	{ACLREX, C_NONE, C_NONE, C_VCON, 38, 4, 0, 0, 0},
 	{ACLREX, C_NONE, C_NONE, C_NONE, 38, 4, 0, 0, 0},
 	{ACBZ, C_REG, C_NONE, C_SBRA, 39, 4, 0, 0, 0},
@@ -673,7 +676,7 @@ func span7(ctxt *obj.Link, cursym *obj.LSym) {
  * drop the pool now, and branch round it.
  */
 func checkpool(ctxt *obj.Link, p *obj.Prog, skip int) {
-	if pool.size >= 0xffff0 || !ispcdisp(int32(p.Pc+4+int64(pool.size)-int64(pool.start)+8)) {
+	if pool.size >= 0xffff0 || !(ispcdisp(int32(p.Pc+4+int64(pool.size)-int64(pool.start)+8)) != 0) {
 		flushpool(ctxt, p, skip)
 	} else if p.Link == nil {
 		flushpool(ctxt, p, 2)
@@ -826,27 +829,27 @@ func regoff(ctxt *obj.Link, a *obj.Addr) uint32 {
 	return uint32(ctxt.Instoffset)
 }
 
-func ispcdisp(v int32) bool {
+func ispcdisp(v int32) int {
 	/* pc-relative addressing will reach? */
-	return v >= -0xfffff && v <= 0xfffff && (v&3) == 0
+	return obj.Bool2int(v >= -0xfffff && v <= 0xfffff && (v&3) == 0)
 }
 
-func isaddcon(v int64) bool {
+func isaddcon(v int64) int {
 	/* uimm12 or uimm24? */
 	if v < 0 {
-		return false
+		return 0
 	}
 	if (v & 0xFFF) == 0 {
 		v >>= 12
 	}
-	return v <= 0xFFF
+	return obj.Bool2int(v <= 0xFFF)
 }
 
-func isbitcon(v uint64) bool {
+func isbitcon(v uint64) int {
 	/*  fancy bimm32 or bimm64? */
 	// TODO(aram):
-	return false
-	// return findmask(v) != nil || (v>>32) == 0 && findmask(v|(v<<32)) != nil
+	return 0
+	// return obj.Bool2int(findmask(v) != nil || (v>>32) == 0 && findmask(v|(v<<32)) != nil)
 }
 
 func autoclass(l int64) int {
@@ -1007,11 +1010,11 @@ func aclass(ctxt *obj.Link, a *obj.Addr) int {
 			if v == 0 {
 				return C_ZCON
 			}
-			if isaddcon(v) {
+			if isaddcon(v) != 0 {
 				if v <= 0xFFF {
 					return C_ADDCON0
 				}
-				if isbitcon(uint64(v)) {
+				if isbitcon(uint64(v)) != 0 {
 					return C_ABCON
 				}
 				return C_ADDCON
@@ -1019,7 +1022,7 @@ func aclass(ctxt *obj.Link, a *obj.Addr) int {
 
 			t := movcon(v)
 			if t >= 0 {
-				if isbitcon(uint64(v)) {
+				if isbitcon(uint64(v)) != 0 {
 					return C_MBCON
 				}
 				return C_MOVCON
@@ -1027,13 +1030,13 @@ func aclass(ctxt *obj.Link, a *obj.Addr) int {
 
 			t = movcon(^v)
 			if t >= 0 {
-				if isbitcon(uint64(v)) {
+				if isbitcon(uint64(v)) != 0 {
 					return C_MBCON
 				}
 				return C_MOVCON
 			}
 
-			if isbitcon(uint64(v)) {
+			if isbitcon(uint64(v)) != 0 {
 				return C_BITCON
 			}
 
@@ -1062,7 +1065,7 @@ func aclass(ctxt *obj.Link, a *obj.Addr) int {
 		return C_GOK
 
 	aconsize:
-		if isaddcon(ctxt.Instoffset) {
+		if isaddcon(ctxt.Instoffset) != 0 {
 			return C_AACON
 		}
 		return C_LACON
@@ -1567,6 +1570,8 @@ func buildop(ctxt *obj.Link) {
 			ADWORD,
 			obj.ARET,
 			obj.ATEXT,
+			ACASE,
+			ABCASE,
 			ASTP,
 			ALDP:
 			break
@@ -1796,6 +1801,7 @@ func SYSARG4(op1 int, Cn int, Cm int, op2 int) int {
 }
 
 func asmout(ctxt *obj.Link, p *obj.Prog, o *Optab, out []uint32) {
+	var lastcase *obj.Prog
 	o1 := uint32(0)
 	o2 := uint32(0)
 	o3 := uint32(0)
@@ -1893,7 +1899,7 @@ func asmout(ctxt *obj.Link, p *obj.Prog, o *Optab, out []uint32) {
 		rel.Off = int32(ctxt.Pc)
 		rel.Siz = 4
 		rel.Sym = p.To.Sym
-		rel.Add = p.To.Offset
+		rel.Add = int64(o1) | (p.To.Offset>>2)&0x3ffffff
 		rel.Type = obj.R_CALLARM64
 
 	case 6: /* b ,O(R); bl ,O(R) */
@@ -2182,14 +2188,14 @@ func asmout(ctxt *obj.Link, p *obj.Prog, o *Optab, out []uint32) {
 	case 24: /* mov/mvn Rs,Rd -> add $0,Rs,Rd or orr Rs,ZR,Rd */
 		rf := int(p.From.Reg)
 		rt := int(p.To.Reg)
-		s := rf == REGSP || rt == REGSP
+		s := obj.Bool2int(rf == REGSP || rt == REGSP)
 		if p.As == AMVN || p.As == AMVNW {
-			if s {
+			if s != 0 {
 				ctxt.Diag("illegal SP reference\n%v", p)
 			}
 			o1 = oprrr(ctxt, int(p.As))
 			o1 |= (uint32(rf&31) << 16) | (REGZERO & 31 << 5) | uint32(rt&31)
-		} else if s {
+		} else if s != 0 {
 			o1 = opirr(ctxt, int(p.As))
 			o1 |= (uint32(rf&31) << 5) | uint32(rt&31)
 		} else {
@@ -2692,6 +2698,28 @@ func asmout(ctxt *obj.Link, p *obj.Prog, o *Optab, out []uint32) {
 		d := brdist(ctxt, p, 0, 21, 0)
 
 		o1 = ADR(0, uint32(d), uint32(p.To.Reg))
+
+	case 62: /* case Rv, Rt -> adr tab, Rt; movw Rt[R<<2], Rl; add Rt, Rl; br (Rl) */
+		// adr 4(pc), Rt
+		o1 = ADR(0, 4*4, uint32(p.To.Reg))
+		// movw Rt[Rv<<2], REGTMP
+		o2 = (2 << 30) | (7 << 27) | (2 << 22) | (1 << 21) | (3 << 13) | (1 << 12) | (2 << 10) | (uint32(p.From.Reg&31) << 16) | (uint32(p.To.Reg&31) << 5) | REGTMP&31
+		// add Rt, REGTMP
+		o3 = oprrr(ctxt, AADD) | (uint32(p.To.Reg) << 16) | (REGTMP << 5) | REGTMP
+		// br (REGTMP)
+		o4 = (0x6b << 25) | (0x1F << 16) | (REGTMP & 31 << 5)
+		lastcase = p
+
+	case 63: /* bcase */
+		if lastcase == nil {
+			ctxt.Diag("missing CASE\n%v", p)
+			break
+		}
+
+		if p.Pcond != nil {
+			o1 = uint32(p.Pcond.Pc - (lastcase.Pc + 4*4))
+			ctxt.Diag("FIXME: some relocation needed in bcase\n%v", p)
+		}
 
 		/* reloc ops */
 	case 64: /* movT R,addr -> adrp + add + movT R, (REGTMP) */

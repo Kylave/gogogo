@@ -27,18 +27,15 @@ func (p *Parser) append(prog *obj.Prog, cond string, doLabel bool) {
 		case '5':
 			if !arch.ARMConditionCodes(prog, cond) {
 				p.errorf("unrecognized condition code .%q", cond)
-				return
 			}
 
 		case '7':
 			if !arch.ARM64Suffix(prog, cond) {
 				p.errorf("unrecognized suffix .%q", cond)
-				return
 			}
 
 		default:
 			p.errorf("unrecognized suffix .%q", cond)
-			return
 		}
 	}
 	if p.firstProg == nil {
@@ -52,7 +49,6 @@ func (p *Parser) append(prog *obj.Prog, cond string, doLabel bool) {
 		for _, label := range p.pendingLabels {
 			if p.labels[label] != nil {
 				p.errorf("label %q multiply defined", label)
-				return
 			}
 			p.labels[label] = prog
 		}
@@ -67,17 +63,14 @@ func (p *Parser) append(prog *obj.Prog, cond string, doLabel bool) {
 	}
 }
 
-// validSymbol checks that addr represents a valid name for a pseudo-op.
-func (p *Parser) validSymbol(pseudo string, addr *obj.Addr, offsetOk bool) bool {
+// validateSymbol checks that addr represents a valid name for a pseudo-op.
+func (p *Parser) validateSymbol(pseudo string, addr *obj.Addr, offsetOk bool) {
 	if addr.Name != obj.NAME_EXTERN && addr.Name != obj.NAME_STATIC || addr.Scale != 0 || addr.Reg != 0 {
-		p.errorf("%s symbol %q must be a symbol(SB)", pseudo, symbolName(addr))
-		return false
+		p.errorf("%s symbol %q must be a symbol(SB)", pseudo, addr.Sym.Name)
 	}
 	if !offsetOk && addr.Offset != 0 {
-		p.errorf("%s symbol %q must not be offset from SB", pseudo, symbolName(addr))
-		return false
+		p.errorf("%s symbol %q must not be offset from SB", pseudo, addr.Sym.Name)
 	}
-	return true
 }
 
 // evalInteger evaluates an integer constant for a pseudo-op.
@@ -86,13 +79,11 @@ func (p *Parser) evalInteger(pseudo string, operands []lex.Token) int64 {
 	return p.getConstantPseudo(pseudo, &addr)
 }
 
-// validImmediate checks that addr represents an immediate constant.
-func (p *Parser) validImmediate(pseudo string, addr *obj.Addr) bool {
+// validateImmediate checks that addr represents an immediate constant.
+func (p *Parser) validateImmediate(pseudo string, addr *obj.Addr) {
 	if addr.Type != obj.TYPE_CONST || addr.Name != 0 || addr.Reg != 0 || addr.Index != 0 {
 		p.errorf("%s: expected immediate constant; found %s", pseudo, obj.Dconv(&emptyProg, addr))
-		return false
 	}
-	return true
 }
 
 // asmText assembles a TEXT pseudo-op.
@@ -100,7 +91,6 @@ func (p *Parser) validImmediate(pseudo string, addr *obj.Addr) bool {
 func (p *Parser) asmText(word string, operands [][]lex.Token) {
 	if len(operands) != 2 && len(operands) != 3 {
 		p.errorf("expect two or three operands for TEXT")
-		return
 	}
 
 	// Labels are function scoped. Patch existing labels and
@@ -111,10 +101,8 @@ func (p *Parser) asmText(word string, operands [][]lex.Token) {
 	// Operand 0 is the symbol name in the form foo(SB).
 	// That means symbol plus indirect on SB and no offset.
 	nameAddr := p.address(operands[0])
-	if !p.validSymbol("TEXT", &nameAddr, false) {
-		return
-	}
-	name := symbolName(&nameAddr)
+	p.validateSymbol("TEXT", &nameAddr, false)
+	name := nameAddr.Sym.Name
 	next := 1
 
 	// Next operand is the optional text flag, a literal integer.
@@ -155,7 +143,6 @@ func (p *Parser) asmText(word string, operands [][]lex.Token) {
 		// There is an argument size. It must be a minus sign followed by a non-negative integer literal.
 		if len(op) != 2 || op[0].ScanToken != '-' || op[1].ScanToken != scanner.Int {
 			p.errorf("TEXT %s: argument size must be of form -integer", name)
-			return
 		}
 		argSize = p.positiveAtoi(op[1].String())
 	}
@@ -184,7 +171,6 @@ func (p *Parser) asmText(word string, operands [][]lex.Token) {
 func (p *Parser) asmData(word string, operands [][]lex.Token) {
 	if len(operands) != 2 {
 		p.errorf("expect two operands for DATA")
-		return
 	}
 
 	// Operand 0 has the general form foo<>+0x04(SB)/4.
@@ -192,15 +178,12 @@ func (p *Parser) asmData(word string, operands [][]lex.Token) {
 	n := len(op)
 	if n < 3 || op[n-2].ScanToken != '/' || op[n-1].ScanToken != scanner.Int {
 		p.errorf("expect /size for DATA argument")
-		return
 	}
 	scale := p.parseScale(op[n-1].String())
 	op = op[:n-2]
 	nameAddr := p.address(op)
-	if !p.validSymbol("DATA", &nameAddr, true) {
-		return
-	}
-	name := symbolName(&nameAddr)
+	p.validateSymbol("DATA", &nameAddr, true)
+	name := nameAddr.Sym.Name
 
 	// Operand 1 is an immediate constant or address.
 	valueAddr := p.address(operands[1])
@@ -209,13 +192,11 @@ func (p *Parser) asmData(word string, operands [][]lex.Token) {
 		// OK
 	default:
 		p.errorf("DATA value must be an immediate constant or address")
-		return
 	}
 
 	// The addresses must not overlap. Easiest test: require monotonicity.
 	if lastAddr, ok := p.dataAddr[name]; ok && nameAddr.Offset < lastAddr {
 		p.errorf("overlapping DATA entry for %s", name)
-		return
 	}
 	p.dataAddr[name] = nameAddr.Offset + int64(scale)
 
@@ -239,14 +220,11 @@ func (p *Parser) asmData(word string, operands [][]lex.Token) {
 func (p *Parser) asmGlobl(word string, operands [][]lex.Token) {
 	if len(operands) != 2 && len(operands) != 3 {
 		p.errorf("expect two or three operands for GLOBL")
-		return
 	}
 
 	// Operand 0 has the general form foo<>+0x04(SB).
 	nameAddr := p.address(operands[0])
-	if !p.validSymbol("GLOBL", &nameAddr, false) {
-		return
-	}
+	p.validateSymbol("GLOBL", &nameAddr, false)
 	next := 1
 
 	// Next operand is the optional flag, a literal integer.
@@ -258,9 +236,7 @@ func (p *Parser) asmGlobl(word string, operands [][]lex.Token) {
 
 	// Final operand is an immediate constant.
 	addr := p.address(operands[next])
-	if !p.validImmediate("GLOBL", &addr) {
-		return
-	}
+	p.validateImmediate("GLOBL", &addr)
 
 	// log.Printf("GLOBL %s %d, $%d", name, flag, size)
 	prog := &obj.Prog{
@@ -281,20 +257,15 @@ func (p *Parser) asmGlobl(word string, operands [][]lex.Token) {
 func (p *Parser) asmPCData(word string, operands [][]lex.Token) {
 	if len(operands) != 2 {
 		p.errorf("expect two operands for PCDATA")
-		return
 	}
 
 	// Operand 0 must be an immediate constant.
 	key := p.address(operands[0])
-	if !p.validImmediate("PCDATA", &key) {
-		return
-	}
+	p.validateImmediate("PCDATA", &key)
 
 	// Operand 1 must be an immediate constant.
 	value := p.address(operands[1])
-	if !p.validImmediate("PCDATA", &value) {
-		return
-	}
+	p.validateImmediate("PCDATA", &value)
 
 	// log.Printf("PCDATA $%d, $%d", key.Offset, value.Offset)
 	prog := &obj.Prog{
@@ -312,20 +283,15 @@ func (p *Parser) asmPCData(word string, operands [][]lex.Token) {
 func (p *Parser) asmFuncData(word string, operands [][]lex.Token) {
 	if len(operands) != 2 {
 		p.errorf("expect two operands for FUNCDATA")
-		return
 	}
 
 	// Operand 0 must be an immediate constant.
 	valueAddr := p.address(operands[0])
-	if !p.validImmediate("FUNCDATA", &valueAddr) {
-		return
-	}
+	p.validateImmediate("FUNCDATA", &valueAddr)
 
 	// Operand 1 is a symbol name in the form foo(SB).
 	nameAddr := p.address(operands[1])
-	if !p.validSymbol("FUNCDATA", &nameAddr, true) {
-		return
-	}
+	p.validateSymbol("FUNCDATA", &nameAddr, true)
 
 	prog := &obj.Prog{
 		Ctxt:   p.ctxt,
@@ -368,7 +334,6 @@ func (p *Parser) asmJump(op int, cond string, a []obj.Addr) {
 			reg, ok := p.arch.RegisterNumber("R", int16(reg))
 			if !ok {
 				p.errorf("bad register number %d", reg)
-				return
 			}
 			prog.Reg = reg
 			break
@@ -419,7 +384,6 @@ func (p *Parser) asmJump(op int, cond string, a []obj.Addr) {
 		prog.To = a[0]
 	default:
 		p.errorf("cannot assemble jump %+v", target)
-		return
 	}
 
 	p.append(prog, cond, true)
@@ -430,9 +394,9 @@ func (p *Parser) patch() {
 		targetProg := p.labels[patch.label]
 		if targetProg == nil {
 			p.errorf("undefined label %s", patch.label)
-			return
+		} else {
+			p.branch(patch.prog, targetProg)
 		}
-		p.branch(patch.prog, targetProg)
 	}
 	p.toPatch = p.toPatch[:0]
 }
@@ -498,7 +462,6 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 					break
 				}
 				p.errorf("unrecognized addressing for %s", obj.Aconv(op))
-				return
 			}
 			if arch.IsARMFloatCmp(op) {
 				prog.From = a[0]
@@ -537,7 +500,6 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 				prog.To = a[1]
 				if a[2].Type != obj.TYPE_REG {
 					p.errorf("invalid addressing modes for third operand to %s instruction, must be register", obj.Aconv(op))
-					return
 				}
 				prog.RegTo2 = a[2].Reg
 				break
@@ -573,11 +535,9 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 				prog.To = a[2]
 			default:
 				p.errorf("invalid addressing modes for %s instruction", obj.Aconv(op))
-				return
 			}
 		default:
 			p.errorf("TODO: implement three-operand instructions for this architecture")
-			return
 		}
 	case 4:
 		if p.arch.Thechar == '5' && arch.IsARMMULA(op) {
@@ -611,7 +571,6 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 			break
 		}
 		p.errorf("can't handle %s instruction with 4 operands", obj.Aconv(op))
-		return
 	case 5:
 		if p.arch.Thechar == '9' && arch.IsPPC64RLD(op) {
 			// Always reg, reg, con, con, reg.  (con, con is a 'mask').
@@ -633,7 +592,6 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 			break
 		}
 		p.errorf("can't handle %s instruction with 5 operands", obj.Aconv(op))
-		return
 	case 6:
 		if p.arch.Thechar == '5' && arch.IsARMMRC(op) {
 			// Strange special case: MCR, MRC.
@@ -657,7 +615,6 @@ func (p *Parser) asmInstruction(op int, cond string, a []obj.Addr) {
 		fallthrough
 	default:
 		p.errorf("can't handle %s instruction with %d operands", obj.Aconv(op), len(a))
-		return
 	}
 
 	p.append(prog, cond, true)
@@ -668,14 +625,6 @@ func newAddr(x obj.Addr) *obj.Addr {
 	p := new(obj.Addr)
 	*p = x
 	return p
-}
-
-// symbolName returns the symbol name, or an error string if none if available.
-func symbolName(addr *obj.Addr) string {
-	if addr.Sym != nil {
-		return addr.Sym.Name
-	}
-	return "<erroneous symbol>"
 }
 
 var emptyProg obj.Prog

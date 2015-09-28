@@ -350,29 +350,13 @@ func symtab() {
 
 	// pseudo-symbols to mark locations of type, string, and go string data.
 	var symtype *LSym
-	var symtyperel *LSym
-	if UseRelro() && Buildmode == BuildmodeCShared {
+	if !DynlinkingGo() {
 		s = Linklookup(Ctxt, "type.*", 0)
 
 		s.Type = obj.STYPE
 		s.Size = 0
 		s.Reachable = true
 		symtype = s
-
-		s = Linklookup(Ctxt, "typerel.*", 0)
-
-		s.Type = obj.STYPERELRO
-		s.Size = 0
-		s.Reachable = true
-		symtyperel = s
-	} else if !DynlinkingGo() {
-		s = Linklookup(Ctxt, "type.*", 0)
-
-		s.Type = obj.STYPE
-		s.Size = 0
-		s.Reachable = true
-		symtype = s
-		symtyperel = s
 	}
 
 	s = Linklookup(Ctxt, "go.string.*", 0)
@@ -397,7 +381,6 @@ func symtab() {
 	symgcbits := s
 
 	symtypelink := Linklookup(Ctxt, "runtime.typelink", 0)
-	symtypelink.Type = obj.STYPELINK
 
 	symt = Linklookup(Ctxt, "runtime.symtab", 0)
 	symt.Local = true
@@ -417,14 +400,9 @@ func symtab() {
 		}
 
 		if strings.HasPrefix(s.Name, "type.") && !DynlinkingGo() {
+			s.Type = obj.STYPE
 			s.Hide = 1
-			if UseRelro() && len(s.R) > 0 {
-				s.Type = obj.STYPERELRO
-				s.Outer = symtyperel
-			} else {
-				s.Type = obj.STYPE
-				s.Outer = symtype
-			}
+			s.Outer = symtype
 		}
 
 		if strings.HasPrefix(s.Name, "go.typelink.") {
@@ -474,7 +452,11 @@ func symtab() {
 	// runtime to use. Any changes here must be matched by changes to
 	// the definition of moduledata in runtime/symtab.go.
 	// This code uses several global variables that are set by pcln.go:pclntab.
-	moduledata := Ctxt.Moduledata
+	moduledata := Linklookup(Ctxt, "runtime.firstmoduledata", 0)
+	moduledata.Type = obj.SNOPTRDATA
+	moduledata.Size = 0 // truncate symbol back to 0 bytes to reinitialize
+	moduledata.Reachable = true
+	moduledata.Local = true
 	// The pclntab slice
 	Addaddr(Ctxt, moduledata, Linklookup(Ctxt, "runtime.pclntab", 0))
 	adduint(Ctxt, moduledata, uint64(Linklookup(Ctxt, "runtime.pclntab", 0).Size))

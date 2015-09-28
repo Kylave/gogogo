@@ -988,7 +988,6 @@ func newextram() {
 	gp.sched.g = guintptr(unsafe.Pointer(gp))
 	gp.syscallpc = gp.sched.pc
 	gp.syscallsp = gp.sched.sp
-	gp.stktopsp = gp.sched.sp
 	// malg returns status as Gidle, change to Gsyscall before adding to allg
 	// where GC will see it.
 	casgstatus(gp, _Gidle, _Gsyscall)
@@ -1539,7 +1538,7 @@ func resetspinning() {
 	if _g_.m.spinning {
 		_g_.m.spinning = false
 		nmspinning = xadd(&sched.nmspinning, -1)
-		if int32(nmspinning) < 0 {
+		if nmspinning < 0 {
 			throw("findrunnable: negative nmspinning")
 		}
 	} else {
@@ -1782,7 +1781,7 @@ func save(pc, sp uintptr) {
 // The goroutine g is about to enter a system call.
 // Record that it's not using the cpu anymore.
 // This is called only from the go syscall library and cgocall,
-// not from the low-level system calls used by the runtime.
+// not from the low-level system calls used by the
 //
 // Entersyscall cannot split the stack: the gosave must
 // make g->sched refer to the caller's stack segment, because
@@ -1823,6 +1822,10 @@ func reentersyscall(pc, sp uintptr) {
 	// but can have inconsistent g->sched, do not let GC observe it.
 	_g_.m.locks++
 
+	if trace.enabled {
+		systemstack(traceGoSysCall)
+	}
+
 	// Entersyscall must not call any function that might split/grow the stack.
 	// (See details in comment above.)
 	// Catch calls that might, by replacing the stack guard with something that
@@ -1840,14 +1843,6 @@ func reentersyscall(pc, sp uintptr) {
 			print("entersyscall inconsistent ", hex(_g_.syscallsp), " [", hex(_g_.stack.lo), ",", hex(_g_.stack.hi), "]\n")
 			throw("entersyscall")
 		})
-	}
-
-	if trace.enabled {
-		systemstack(traceGoSysCall)
-		// systemstack itself clobbers g.sched.{pc,sp} and we might
-		// need them later when the G is genuinely blocked in a
-		// syscall
-		save(pc, sp)
 	}
 
 	if atomicload(&sched.sysmonwait) != 0 { // TODO: fast atomic
@@ -2272,7 +2267,6 @@ func newproc1(fn *funcval, argp *uint8, narg int32, nret int32, callerpc uintptr
 
 	memclr(unsafe.Pointer(&newg.sched), unsafe.Sizeof(newg.sched))
 	newg.sched.sp = sp
-	newg.stktopsp = sp
 	newg.sched.pc = funcPC(goexit) + _PCQuantum // +PCQuantum so that previous instruction is in same function
 	newg.sched.g = guintptr(unsafe.Pointer(newg))
 	gostartcallfn(&newg.sched, fn)

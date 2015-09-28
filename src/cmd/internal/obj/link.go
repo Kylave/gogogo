@@ -247,11 +247,10 @@ func (p *Prog) From3Offset() int64 {
 // by clients such as the compiler. The exact meaning of this
 // data is up to the client and is not interpreted by the cmd/internal/obj/... packages.
 type ProgInfo struct {
-	Flags    uint32   // flag bits
-	Reguse   uint64   // registers implicitly used by this instruction
-	Regset   uint64   // registers implicitly set by this instruction
-	Regindex uint64   // registers used by addressing mode
-	_        struct{} // to prevent unkeyed literals
+	Flags    uint32 // flag bits
+	Reguse   uint64 // registers implicitly used by this instruction
+	Regset   uint64 // registers implicitly set by this instruction
+	Regindex uint64 // registers used by addressing mode
 }
 
 // Prog.as opcodes.
@@ -334,7 +333,6 @@ const (
 	Sxxx = iota
 	STEXT
 	SELFRXSECT
-
 	STYPE
 	SSTRING
 	SGOSTRING
@@ -342,25 +340,6 @@ const (
 	SGCBITS
 	SRODATA
 	SFUNCTAB
-
-	// Types STYPE-SFUNCTAB above are written to the .rodata section by default.
-	// When linking a shared object, some conceptually "read only" types need to
-	// be written to by relocations and putting them in a section called
-	// ".rodata" interacts poorly with the system linkers. The GNU linkers
-	// support this situation by arranging for sections of the name
-	// ".data.rel.ro.XXX" to be mprotected read only by the dynamic linker after
-	// relocations have applied, so when the Go linker is creating a shared
-	// object it checks all objects of the above types and bumps any object that
-	// has a relocation to it to the corresponding type below, which are then
-	// written to sections with appropriate magic names.
-	STYPERELRO
-	SSTRINGRELRO
-	SGOSTRINGRELRO
-	SGOFUNCRELRO
-	SGCBITSRELRO
-	SRODATARELRO
-	SFUNCTABRELRO
-
 	STYPELINK
 	SSYMTAB
 	SPCLNTAB
@@ -486,6 +465,7 @@ type Link struct {
 	Arch               *LinkArch
 	Debugasm           int32
 	Debugvlog          int32
+	Debugzerostack     int32
 	Debugdivmod        int32
 	Debugpcln          int32
 	Flag_shared        int32
@@ -522,6 +502,7 @@ type Link struct {
 	Autosize           int32
 	Armsize            int32
 	Pc                 int64
+	Tlsoffset          int
 	Diag               func(string, ...interface{})
 	Mode               int
 	Cursym             *LSym

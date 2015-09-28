@@ -10,56 +10,40 @@ import (
 	"testing"
 )
 
-func benchmarkAESGCMSeal(b *testing.B, buf []byte) {
+func BenchmarkAESGCMSeal1K(b *testing.B) {
+	buf := make([]byte, 1024)
 	b.SetBytes(int64(len(buf)))
 
 	var key [16]byte
 	var nonce [12]byte
-	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
 	aesgcm, _ := cipher.NewGCM(aes)
 	var out []byte
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
+		out = aesgcm.Seal(out[:0], nonce[:], buf, nonce[:])
 	}
 }
 
-func benchmarkAESGCMOpen(b *testing.B, buf []byte) {
+func BenchmarkAESGCMOpen1K(b *testing.B) {
+	buf := make([]byte, 1024)
 	b.SetBytes(int64(len(buf)))
 
 	var key [16]byte
 	var nonce [12]byte
-	var ad [13]byte
 	aes, _ := aes.NewCipher(key[:])
 	aesgcm, _ := cipher.NewGCM(aes)
 	var out []byte
-	out = aesgcm.Seal(out[:0], nonce[:], buf, ad[:])
+	out = aesgcm.Seal(out[:0], nonce[:], buf, nonce[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := aesgcm.Open(buf[:0], nonce[:], out, ad[:])
+		_, err := aesgcm.Open(buf[:0], nonce[:], out, nonce[:])
 		if err != nil {
 			b.Errorf("Open: %v", err)
 		}
 	}
-}
-
-func BenchmarkAESGCMSeal1K(b *testing.B) {
-	benchmarkAESGCMSeal(b, make([]byte, 1024))
-}
-
-func BenchmarkAESGCMOpen1K(b *testing.B) {
-	benchmarkAESGCMOpen(b, make([]byte, 1024))
-}
-
-func BenchmarkAESGCMSeal8K(b *testing.B) {
-	benchmarkAESGCMSeal(b, make([]byte, 8*1024))
-}
-
-func BenchmarkAESGCMOpen8K(b *testing.B) {
-	benchmarkAESGCMOpen(b, make([]byte, 8*1024))
 }
 
 // If we test exactly 1K blocks, we would generate exact multiples of

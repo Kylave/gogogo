@@ -39,6 +39,10 @@ import (
 	"strconv"
 )
 
+func yy_isalpha(c int) bool {
+	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z'
+}
+
 var headers = []struct {
 	name string
 	val  int
@@ -144,7 +148,12 @@ func linknew(arch *LinkArch) *Link {
 
 	// On arm, record goarm.
 	if ctxt.Arch.Thechar == '5' {
-		ctxt.Goarm = obj.Getgoarm()
+		p := obj.Getgoarm()
+		if p != "" {
+			ctxt.Goarm = int32(obj.Atoi(p))
+		} else {
+			ctxt.Goarm = 6
+		}
 	}
 
 	return ctxt

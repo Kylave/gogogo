@@ -63,12 +63,7 @@ func predefine(defines flags.MultiFlag) map[string]*Macro {
 	return macros
 }
 
-var panicOnError bool // For testing.
-
 func (in *Input) Error(args ...interface{}) {
-	if panicOnError {
-		panic(fmt.Errorf("%s:%d: %s", in.File(), in.Line(), fmt.Sprintln(args...)))
-	}
 	fmt.Fprintf(os.Stderr, "%s:%d: %s", in.File(), in.Line(), fmt.Sprintln(args...))
 	os.Exit(1)
 }
@@ -118,10 +113,6 @@ func (in *Input) Next() ScanToken {
 			}
 			fallthrough
 		default:
-			if tok == scanner.EOF && len(in.ifdefStack) > 0 {
-				// We're skipping text but have run out of input with no #endif.
-				in.Error("unclosed #ifdef or #ifndef")
-			}
 			in.beginningOfLine = tok == '\n'
 			if in.enabled() {
 				in.text = in.Stack.Text()
@@ -145,11 +136,10 @@ func (in *Input) hash() bool {
 		in.expectText("expected identifier after '#'")
 	}
 	if !in.enabled() {
-		// Can only start including again if we are at #else or #endif but also
-		// need to keep track of nested #if[n]defs.
+		// Can only start including again if we are at #else or #endif.
 		// We let #line through because it might affect errors.
 		switch in.Stack.Text() {
-		case "else", "endif", "ifdef", "ifndef", "line":
+		case "else", "endif", "line":
 			// Press on.
 		default:
 			return false
@@ -260,9 +250,6 @@ func (in *Input) macroDefinition(name string) ([]string, []Token) {
 	var tokens []Token
 	// Scan to newline. Backslashes escape newlines.
 	for tok != '\n' {
-		if tok == scanner.EOF {
-			in.Error("missing newline in macro definition for %q\n", name)
-		}
 		if tok == '\\' {
 			tok = in.Stack.Next()
 			if tok != '\n' && tok != '\\' {
@@ -373,9 +360,7 @@ func (in *Input) collectArgument(macro *Macro) ([]Token, ScanToken) {
 func (in *Input) ifdef(truth bool) {
 	name := in.macroName()
 	in.expectNewline("#if[n]def")
-	if !in.enabled() {
-		truth = false
-	} else if _, defined := in.macros[name]; !defined {
+	if _, defined := in.macros[name]; !defined {
 		truth = !truth
 	}
 	in.ifdefStack = append(in.ifdefStack, truth)
@@ -387,9 +372,7 @@ func (in *Input) else_() {
 	if len(in.ifdefStack) == 0 {
 		in.Error("unmatched #else")
 	}
-	if len(in.ifdefStack) == 1 || in.ifdefStack[len(in.ifdefStack)-2] {
-		in.ifdefStack[len(in.ifdefStack)-1] = !in.ifdefStack[len(in.ifdefStack)-1]
-	}
+	in.ifdefStack[len(in.ifdefStack)-1] = !in.ifdefStack[len(in.ifdefStack)-1]
 }
 
 // #endif processing.

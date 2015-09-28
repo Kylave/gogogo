@@ -47,13 +47,8 @@ func answer(name, server string, dns *dnsMsg, qtype uint16) (cname string, addrs
 		// None of the error codes make sense
 		// for the query we sent.  If we didn't get
 		// a name error and we didn't get success,
-		// the server is behaving incorrectly or
-		// having temporary trouble.
-		err := &DNSError{Err: "server misbehaving", Name: name, Server: server}
-		if dns.rcode == dnsRcodeServerFailure {
-			err.IsTemporary = true
-		}
-		return "", nil, err
+		// the server is behaving incorrectly.
+		return "", nil, &DNSError{Err: "server misbehaving", Name: name, Server: server}
 	}
 
 	// Look for the name.

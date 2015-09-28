@@ -156,6 +156,17 @@ const (
 	LEAF  = 1 << 2
 )
 
+func linkcase(casep *obj.Prog) {
+	for p := casep; p != nil; p = p.Link {
+		if p.As == ABCASE {
+			for ; p != nil && p.As == ABCASE; p = p.Link {
+				p.Rel = casep
+			}
+			break
+		}
+	}
+}
+
 func preprocess(ctxt *obj.Link, cursym *obj.LSym) {
 	autosize := int32(0)
 
@@ -175,6 +186,65 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym) {
 	cursym.Locals = autoffset
 	cursym.Args = p.To.Val.(int32)
 
+	if ctxt.Debugzerostack != 0 {
+		if autoffset != 0 && p.From3.Offset&obj.NOSPLIT == 0 {
+			// MOVW $4(R13), R1
+			p = obj.Appendp(ctxt, p)
+
+			p.As = AMOVW
+			p.From.Type = obj.TYPE_ADDR
+			p.From.Reg = REG_R13
+			p.From.Offset = 4
+			p.To.Type = obj.TYPE_REG
+			p.To.Reg = REG_R1
+
+			// MOVW $n(R13), R2
+			p = obj.Appendp(ctxt, p)
+
+			p.As = AMOVW
+			p.From.Type = obj.TYPE_ADDR
+			p.From.Reg = REG_R13
+			p.From.Offset = 4 + int64(autoffset)
+			p.To.Type = obj.TYPE_REG
+			p.To.Reg = REG_R2
+
+			// MOVW $0, R3
+			p = obj.Appendp(ctxt, p)
+
+			p.As = AMOVW
+			p.From.Type = obj.TYPE_CONST
+			p.From.Offset = 0
+			p.To.Type = obj.TYPE_REG
+			p.To.Reg = REG_R3
+
+			// L:
+			//	MOVW.nil R3, 0(R1) +4
+			//	CMP R1, R2
+			//	BNE L
+			pl := obj.Appendp(ctxt, p)
+			p := pl
+
+			p.As = AMOVW
+			p.From.Type = obj.TYPE_REG
+			p.From.Reg = REG_R3
+			p.To.Type = obj.TYPE_MEM
+			p.To.Reg = REG_R1
+			p.To.Offset = 4
+			p.Scond |= C_PBIT
+
+			p = obj.Appendp(ctxt, p)
+			p.As = ACMP
+			p.From.Type = obj.TYPE_REG
+			p.From.Reg = REG_R1
+			p.Reg = REG_R2
+
+			p = obj.Appendp(ctxt, p)
+			p.As = ABNE
+			p.To.Type = obj.TYPE_BRANCH
+			p.Pcond = pl
+		}
+	}
+
 	/*
 	 * find leaf subroutines
 	 * strip NOPs
@@ -185,6 +255,11 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym) {
 	var q *obj.Prog
 	for p := cursym.Text; p != nil; p = p.Link {
 		switch p.As {
+		case ACASE:
+			if ctxt.Flag_shared != 0 {
+				linkcase(p)
+			}
+
 		case obj.ATEXT:
 			p.Mark |= LEAF
 
@@ -214,7 +289,8 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym) {
 			cursym.Text.Mark &^= LEAF
 			fallthrough
 
-		case AB,
+		case ABCASE,
+			AB,
 			ABEQ,
 			ABNE,
 			ABCS,
@@ -897,7 +973,7 @@ loop:
 	if p.Pcond != nil {
 		if a != ABL && a != ABX && p.Link != nil {
 			q = obj.Brchain(ctxt, p.Link)
-			if a != obj.ATEXT {
+			if a != obj.ATEXT && a != ABCASE {
 				if q != nil && (q.Mark&FOLL != 0) {
 					p.As = int16(relinv(a))
 					p.Link = p.Pcond

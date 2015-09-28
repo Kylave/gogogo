@@ -134,5 +134,8 @@ func main() {
 	http.HandleFunc("/args", ArgServer)
 	http.HandleFunc("/go/hello", HelloServer)
 	http.HandleFunc("/date", DateServer)
-	log.Fatal(http.ListenAndServe(":12345", nil))
+	err := http.ListenAndServe(":12345", nil)
+	if err != nil {
+		log.Panicln("ListenAndServe:", err)
+	}
 }

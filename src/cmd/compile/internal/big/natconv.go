@@ -252,15 +252,14 @@ func (x nat) hexString() string {
 // by len(charset), which must be >= 2 and <= 256.
 func (x nat) string(charset string) string {
 	b := Word(len(charset))
-	if b < 2 || b > 256 {
-		panic("invalid character set length")
-	}
 
-	// x == 0
-	if len(x) == 0 {
+	// special cases
+	switch {
+	case b < 2 || b > 256:
+		panic("invalid character set length")
+	case len(x) == 0:
 		return string(charset[0])
 	}
-	// len(x) > 0
 
 	// allocate buffer for conversion
 	i := int(float64(x.bitLen())/math.Log2(float64(b))) + 1 // off by one at most
@@ -268,13 +267,13 @@ func (x nat) string(charset string) string {
 
 	// convert power of two and non power of two bases separately
 	if b == b&-b {
-		// shift is base b digit size in bits
+		// shift is base-b digit size in bits
 		shift := trailingZeroBits(b) // shift > 0 because b >= 2
-		mask := Word(1<<shift - 1)
-		w := x[0]         // current word
+		mask := Word(1)<<shift - 1
+		w := x[0]
 		nbits := uint(_W) // number of unprocessed bits in w
 
-		// convert less-significant words (include leading zeros)
+		// convert less-significant words
 		for k := 1; k < len(x); k++ {
 			// convert full digits
 			for nbits >= shift {
@@ -290,7 +289,7 @@ func (x nat) string(charset string) string {
 				w = x[k]
 				nbits = _W
 			} else {
-				// partial digit in current word w (== x[k-1]) and next word x[k]
+				// partial digit in current (k-1) and next (k) word
 				w |= x[k] << nbits
 				i--
 				s[i] = charset[w&mask]
@@ -301,11 +300,12 @@ func (x nat) string(charset string) string {
 			}
 		}
 
-		// convert digits of most-significant word w (omit leading zeros)
-		for w != 0 {
+		// convert digits of most-significant word (omit leading zeros)
+		for nbits >= 0 && w != 0 {
 			i--
 			s[i] = charset[w&mask]
 			w >>= shift
+			nbits -= shift
 		}
 
 	} else {
@@ -409,9 +409,9 @@ func (q nat) convertWords(s []byte, charset string, b Word, ndigits int, bb Word
 		}
 	}
 
-	// prepend high-order zeros
+	// prepend high-order zeroes
 	zero := charset[0]
-	for i > 0 { // while need more leading zeros
+	for i > 0 { // while need more leading zeroes
 		i--
 		s[i] = zero
 	}
@@ -425,7 +425,7 @@ var leafSize int = 8 // number of Word-size binary values treat as a monolithic 
 
 type divisor struct {
 	bbb     nat // divisor
-	nbits   int // bit length of divisor (discounting leading zeros) ~= log2(bbb)
+	nbits   int // bit length of divisor (discounting leading zeroes) ~= log2(bbb)
 	ndigits int // digit length of divisor in terms of output base digits
 }
 

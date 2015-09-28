@@ -229,7 +229,6 @@ type g struct {
 	syscallpc      uintptr        // if status==Gsyscall, syscallpc = sched.pc to use during gc
 	stkbar         []stkbar       // stack barriers, from low to high
 	stkbarPos      uintptr        // index of lowest stack barrier not hit
-	stktopsp       uintptr        // expected sp at top of stack, to check in traceback
 	param          unsafe.Pointer // passed parameter on wakeup
 	atomicstatus   uint32
 	stackLock      uint32 // sigprof/scang lock; TODO: fold in to atomicstatus
@@ -257,6 +256,7 @@ type g struct {
 	startpc        uintptr // pc of goroutine function
 	racectx        uintptr
 	waiting        *sudog // sudog structures this g is waiting on (that have a valid elem ptr)
+	readyg         *g     // scratch for readyExecute
 
 	// Per-G gcController state
 	gcalloc    uintptr // bytes allocated during this GC cycle
@@ -429,7 +429,7 @@ type schedt struct {
 
 	pidle      puintptr // idle p's
 	npidle     uint32
-	nmspinning uint32 // limited to [0, 2^31-1]
+	nmspinning uint32
 
 	// Global runnable queue.
 	runqhead guintptr

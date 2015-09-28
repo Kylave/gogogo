@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
-	"reflect"
 	"sync"
 	"text/template"
 	"text/template/parse"
@@ -18,7 +17,7 @@ import (
 // Template is a specialized Template from "text/template" that produces a safe
 // HTML document fragment.
 type Template struct {
-	// Sticky error if escaping fails, or escapeOK if succeeded.
+	// Sticky error if escaping fails.
 	escapeErr error
 	// We could embed the text/template field, but it's safer not to because
 	// we need to keep our version of the name space and the underlying
@@ -170,8 +169,6 @@ func (t *Template) Parse(src string) (*Template, error) {
 		tmpl := t.set[name]
 		if tmpl == nil {
 			tmpl = t.new(name)
-		} else if tmpl.escapeErr != nil {
-			return nil, fmt.Errorf("html/template: cannot redefine %q after it has executed", name)
 		}
 		// Restore our record of this text/template to its unescaped original state.
 		tmpl.escapeErr = nil
@@ -415,11 +412,4 @@ func parseGlob(t *Template, pattern string) (*Template, error) {
 		return nil, fmt.Errorf("html/template: pattern matches no files: %#q", pattern)
 	}
 	return parseFiles(t, filenames...)
-}
-
-// IsTrue reports whether the value is 'true', in the sense of not the zero of its type,
-// and whether the value has a meaningful truth value. This is the definition of
-// truth used by if and other such actions.
-func IsTrue(val reflect.Value) (truth, ok bool) {
-	return template.IsTrue(val)
 }

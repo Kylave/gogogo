@@ -98,7 +98,8 @@ type WordDecoder struct {
 	CharsetReader func(charset string, input io.Reader) (io.Reader, error)
 }
 
-// Decode decodes an RFC 2047 encoded-word.
+// Decode decodes an encoded-word. If word is not a valid RFC 2047 encoded-word,
+// word is returned unchanged.
 func (d *WordDecoder) Decode(word string) (string, error) {
 	fields := strings.Split(word, "?") // TODO: remove allocation?
 	if len(fields) != 5 || fields[0] != "=" || fields[4] != "=" || len(fields[2]) != 1 {

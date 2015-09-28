@@ -11,7 +11,6 @@ const (
 	sizeofInt      = 0x4
 	sizeofLong     = 0x8
 	sizeofLongLong = 0x8
-	PathMax        = 0x400
 )
 
 type (

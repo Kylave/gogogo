@@ -4,13 +4,14 @@ package dwarf
 
 import "fmt"
 
-const _Class_name = "ClassUnknownClassAddressClassBlockClassConstantClassExprLocClassFlagClassLinePtrClassLocListPtrClassMacPtrClassRangeListPtrClassReferenceClassReferenceSigClassStringClassReferenceAltClassStringAlt"
+const _Class_name = "ClassAddressClassBlockClassConstantClassExprLocClassFlagClassLinePtrClassLocListPtrClassMacPtrClassRangeListPtrClassReferenceClassReferenceSigClassStringClassReferenceAltClassStringAlt"
 
-var _Class_index = [...]uint8{0, 12, 24, 34, 47, 59, 68, 80, 95, 106, 123, 137, 154, 165, 182, 196}
+var _Class_index = [...]uint8{0, 12, 22, 35, 47, 56, 68, 83, 94, 111, 125, 142, 153, 170, 184}
 
 func (i Class) String() string {
+	i -= 1
 	if i < 0 || i+1 >= Class(len(_Class_index)) {
-		return fmt.Sprintf("Class(%d)", i)
+		return fmt.Sprintf("Class(%d)", i+1)
 	}
 	return _Class_name[_Class_index[i]:_Class_index[i+1]]
 }

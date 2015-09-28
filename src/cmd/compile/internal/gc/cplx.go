@@ -81,7 +81,7 @@ func complexbool(op int, nl, nr, res *Node, wantTrue bool, likely int, to *obj.P
 // break addable nc-complex into nr-real and ni-imaginary
 func subnode(nr *Node, ni *Node, nc *Node) {
 	if !nc.Addable {
-		Fatalf("subnode not addable")
+		Fatal("subnode not addable")
 	}
 
 	tc := Simsimtype(nc.Type)
@@ -230,7 +230,7 @@ func nodfconst(n *Node, t *Type, fval *Mpflt) {
 	n.Type = t
 
 	if !Isfloat[t.Etype] {
-		Fatalf("nodfconst: bad type %v", t)
+		Fatal("nodfconst: bad type %v", t)
 	}
 }
 
@@ -288,14 +288,14 @@ func Complexmove(f *Node, t *Node) {
 	}
 
 	if !t.Addable {
-		Fatalf("complexmove: to not addable")
+		Fatal("complexmove: to not addable")
 	}
 
 	ft := Simsimtype(f.Type)
 	tt := Simsimtype(t.Type)
 	switch uint32(ft)<<16 | uint32(tt) {
 	default:
-		Fatalf("complexmove: unknown conversion: %v -> %v\n", f.Type, t.Type)
+		Fatal("complexmove: unknown conversion: %v -> %v\n", f.Type, t.Type)
 
 		// complex to complex move/convert.
 	// make f addable.
@@ -403,7 +403,7 @@ func Complexgen(n *Node, res *Node) {
 	switch n.Op {
 	default:
 		Dump("complexgen: unknown op", n)
-		Fatalf("complexgen: unknown op %v", Oconv(int(n.Op), 0))
+		Fatal("complexgen: unknown op %v", Oconv(int(n.Op), 0))
 
 	case ODOT,
 		ODOTPTR,
@@ -462,7 +462,7 @@ func Complexgen(n *Node, res *Node) {
 
 	switch n.Op {
 	default:
-		Fatalf("complexgen: unknown op %v", Oconv(int(n.Op), 0))
+		Fatal("complexgen: unknown op %v", Oconv(int(n.Op), 0))
 
 	case OCONV:
 		Complexmove(nl, res)

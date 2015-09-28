@@ -344,9 +344,12 @@ func buildModeInit() {
 			codegenArg = "-fPIC"
 		} else {
 			switch platform {
-			case "linux/amd64", "linux/arm", "android/arm":
+			case "linux/amd64":
 				codegenArg = "-shared"
+			case "linux/arm":
+				buildAsmflags = append(buildAsmflags, "-shared")
 			case "darwin/amd64":
+			case "android/arm":
 			default:
 				fatalf("-buildmode=c-shared not supported on %s\n", platform)
 			}
@@ -2943,9 +2946,7 @@ func (b *builder) cgo(p *Package, cgoExe, obj string, pcCFLAGS, pcLDFLAGS, cgofi
 	var linkobj []string
 
 	var bareLDFLAGS []string
-	// When linking relocatable objects, various flags need to be
-	// filtered out as they are inapplicable and can cause some linkers
-	// to fail.
+	// filter out -lsomelib, -l somelib, *.{so,dll,dylib}, and (on Darwin) -framework X
 	for i := 0; i < len(cgoLDFLAGS); i++ {
 		f := cgoLDFLAGS[i]
 		switch {
@@ -2961,6 +2962,7 @@ func (b *builder) cgo(p *Package, cgoExe, obj string, pcCFLAGS, pcLDFLAGS, cgofi
 		case strings.HasSuffix(f, ".dylib"),
 			strings.HasSuffix(f, ".so"),
 			strings.HasSuffix(f, ".dll"):
+			continue
 		// Remove any -fsanitize=foo flags.
 		// Otherwise the compiler driver thinks that we are doing final link
 		// and links sanitizer runtime into the object file. But we are not doing
@@ -2969,16 +2971,6 @@ func (b *builder) cgo(p *Package, cgoExe, obj string, pcCFLAGS, pcLDFLAGS, cgofi
 		// See issue 8788 for details.
 		case strings.HasPrefix(f, "-fsanitize="):
 			continue
-		// runpath flags not applicable unless building a shared
-		// object or executable; see issue 12115 for details.  This
-		// is necessary as Go currently does not offer a way to
-		// specify the set of LDFLAGS that only apply to shared
-		// objects.
-		case strings.HasPrefix(f, "-Wl,-rpath"):
-			if f == "-Wl,-rpath" || f == "-Wl,-rpath-link" {
-				// Skip following argument to -rpath* too.
-				i++
-			}
 		default:
 			bareLDFLAGS = append(bareLDFLAGS, f)
 		}

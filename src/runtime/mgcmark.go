@@ -74,18 +74,41 @@ func markroot(desc *parfor, i uint32) {
 			scanblock(uintptr(unsafe.Pointer(&fb.fin[0])), uintptr(fb.cnt)*unsafe.Sizeof(fb.fin[0]), &finptrmask[0], &gcw)
 		}
 
+	case _RootSpans:
+		// mark MSpan.specials
+		sg := mheap_.sweepgen
+		for spanidx := uint32(0); spanidx < uint32(len(work.spans)); spanidx++ {
+			s := work.spans[spanidx]
+			if s.state != mSpanInUse {
+				continue
+			}
+			if !useCheckmark && s.sweepgen != sg {
+				// sweepgen was updated (+2) during non-checkmark GC pass
+				print("sweep ", s.sweepgen, " ", sg, "\n")
+				throw("gc: unswept span")
+			}
+			for sp := s.specials; sp != nil; sp = sp.next {
+				if sp.kind != _KindSpecialFinalizer {
+					continue
+				}
+				// don't mark finalized object, but scan it so we
+				// retain everything it points to.
+				spf := (*specialfinalizer)(unsafe.Pointer(sp))
+				// A finalizer can be set for an inner byte of an object, find object beginning.
+				p := uintptr(s.start<<_PageShift) + uintptr(spf.special.offset)/s.elemsize*s.elemsize
+				if gcphase != _GCscan {
+					scanobject(p, &gcw) // scanned during mark termination
+				}
+				scanblock(uintptr(unsafe.Pointer(&spf.fn)), ptrSize, &oneptrmask[0], &gcw)
+			}
+		}
+
 	case _RootFlushCaches:
 		if gcphase != _GCscan { // Do not flush mcaches during GCscan phase.
 			flushallmcaches()
 		}
 
 	default:
-		if _RootSpans0 <= i && i < _RootSpans0+_RootSpansShards {
-			// mark MSpan.specials
-			markrootSpans(&gcw, int(i)-_RootSpans0)
-			break
-		}
-
 		// the rest is scanning goroutine stacks
 		if uintptr(i-_RootCount) >= allglen {
 			throw("markroot: bad index")
@@ -111,40 +134,6 @@ func markroot(desc *parfor, i uint32) {
 	}
 
 	gcw.dispose()
-}
-
-// markrootSpans marks roots for one shard (out of _RootSpansShards)
-// of work.spans.
-//
-//go:nowritebarrier
-func markrootSpans(gcw *gcWork, shard int) {
-	sg := mheap_.sweepgen
-	startSpan := shard * len(work.spans) / _RootSpansShards
-	endSpan := (shard + 1) * len(work.spans) / _RootSpansShards
-	for _, s := range work.spans[startSpan:endSpan] {
-		if s.state != mSpanInUse {
-			continue
-		}
-		if !useCheckmark && s.sweepgen != sg {
-			// sweepgen was updated (+2) during non-checkmark GC pass
-			print("sweep ", s.sweepgen, " ", sg, "\n")
-			throw("gc: unswept span")
-		}
-		for sp := s.specials; sp != nil; sp = sp.next {
-			if sp.kind != _KindSpecialFinalizer {
-				continue
-			}
-			// don't mark finalized object, but scan it so we
-			// retain everything it points to.
-			spf := (*specialfinalizer)(unsafe.Pointer(sp))
-			// A finalizer can be set for an inner byte of an object, find object beginning.
-			p := uintptr(s.start<<_PageShift) + uintptr(spf.special.offset)/s.elemsize*s.elemsize
-			if gcphase != _GCscan {
-				scanobject(p, gcw) // scanned during mark termination
-			}
-			scanblock(uintptr(unsafe.Pointer(&spf.fn)), ptrSize, &oneptrmask[0], gcw)
-		}
-	}
 }
 
 // gcAssistAlloc records and allocation of size bytes and, if
@@ -498,6 +487,167 @@ func scanframeworker(frame *stkframe, unused unsafe.Pointer, gcw *gcWork) {
 	}
 }
 
+// gcMaxStackBarriers returns the maximum number of stack barriers
+// that can be installed in a stack of stackSize bytes.
+func gcMaxStackBarriers(stackSize int) (n int) {
+	if firstStackBarrierOffset == 0 {
+		// Special debugging case for inserting stack barriers
+		// at every frame. Steal half of the stack for the
+		// []stkbar. Technically, if the stack were to consist
+		// solely of return PCs we would need two thirds of
+		// the stack, but stealing that much breaks things and
+		// this doesn't happen in practice.
+		return stackSize / 2 / int(unsafe.Sizeof(stkbar{}))
+	}
+
+	offset := firstStackBarrierOffset
+	for offset < stackSize {
+		n++
+		offset *= 2
+	}
+	return n + 1
+}
+
+// gcInstallStackBarrier installs a stack barrier over the return PC of frame.
+//go:nowritebarrier
+func gcInstallStackBarrier(gp *g, frame *stkframe) bool {
+	if frame.lr == 0 {
+		if debugStackBarrier {
+			print("not installing stack barrier with no LR, goid=", gp.goid, "\n")
+		}
+		return false
+	}
+
+	if frame.fn.entry == cgocallback_gofuncPC {
+		// cgocallback_gofunc doesn't return to its LR;
+		// instead, its return path puts LR in g.sched.pc and
+		// switches back to the system stack on which
+		// cgocallback_gofunc was originally called. We can't
+		// have a stack barrier in g.sched.pc, so don't
+		// install one in this frame.
+		if debugStackBarrier {
+			print("not installing stack barrier over LR of cgocallback_gofunc, goid=", gp.goid, "\n")
+		}
+		return false
+	}
+
+	// Save the return PC and overwrite it with stackBarrier.
+	var lrUintptr uintptr
+	if usesLR {
+		lrUintptr = frame.sp
+	} else {
+		lrUintptr = frame.fp - regSize
+	}
+	lrPtr := (*uintreg)(unsafe.Pointer(lrUintptr))
+	if debugStackBarrier {
+		print("install stack barrier at ", hex(lrUintptr), " over ", hex(*lrPtr), ", goid=", gp.goid, "\n")
+		if uintptr(*lrPtr) != frame.lr {
+			print("frame.lr=", hex(frame.lr))
+			throw("frame.lr differs from stack LR")
+		}
+	}
+
+	gp.stkbar = gp.stkbar[:len(gp.stkbar)+1]
+	stkbar := &gp.stkbar[len(gp.stkbar)-1]
+	stkbar.savedLRPtr = lrUintptr
+	stkbar.savedLRVal = uintptr(*lrPtr)
+	*lrPtr = uintreg(stackBarrierPC)
+	return true
+}
+
+// gcRemoveStackBarriers removes all stack barriers installed in gp's stack.
+//go:nowritebarrier
+func gcRemoveStackBarriers(gp *g) {
+	if debugStackBarrier && gp.stkbarPos != 0 {
+		print("hit ", gp.stkbarPos, " stack barriers, goid=", gp.goid, "\n")
+	}
+
+	// Remove stack barriers that we didn't hit.
+	for _, stkbar := range gp.stkbar[gp.stkbarPos:] {
+		gcRemoveStackBarrier(gp, stkbar)
+	}
+
+	// Clear recorded stack barriers so copystack doesn't try to
+	// adjust them.
+	gp.stkbarPos = 0
+	gp.stkbar = gp.stkbar[:0]
+}
+
+// gcRemoveStackBarrier removes a single stack barrier. It is the
+// inverse operation of gcInstallStackBarrier.
+//
+// This is nosplit to ensure gp's stack does not move.
+//
+//go:nowritebarrier
+//go:nosplit
+func gcRemoveStackBarrier(gp *g, stkbar stkbar) {
+	if debugStackBarrier {
+		print("remove stack barrier at ", hex(stkbar.savedLRPtr), " with ", hex(stkbar.savedLRVal), ", goid=", gp.goid, "\n")
+	}
+	lrPtr := (*uintreg)(unsafe.Pointer(stkbar.savedLRPtr))
+	if val := *lrPtr; val != uintreg(stackBarrierPC) {
+		printlock()
+		print("at *", hex(stkbar.savedLRPtr), " expected stack barrier PC ", hex(stackBarrierPC), ", found ", hex(val), ", goid=", gp.goid, "\n")
+		print("gp.stkbar=")
+		gcPrintStkbars(gp.stkbar)
+		print(", gp.stkbarPos=", gp.stkbarPos, ", gp.stack=[", hex(gp.stack.lo), ",", hex(gp.stack.hi), ")\n")
+		throw("stack barrier lost")
+	}
+	*lrPtr = uintreg(stkbar.savedLRVal)
+}
+
+// gcPrintStkbars prints a []stkbar for debugging.
+func gcPrintStkbars(stkbar []stkbar) {
+	print("[")
+	for i, s := range stkbar {
+		if i > 0 {
+			print(" ")
+		}
+		print("*", hex(s.savedLRPtr), "=", hex(s.savedLRVal))
+	}
+	print("]")
+}
+
+// gcUnwindBarriers marks all stack barriers up the frame containing
+// sp as hit and removes them. This is used during stack unwinding for
+// panic/recover and by heapBitsBulkBarrier to force stack re-scanning
+// when its destination is on the stack.
+//
+// This is nosplit to ensure gp's stack does not move.
+//
+//go:nosplit
+func gcUnwindBarriers(gp *g, sp uintptr) {
+	// On LR machines, if there is a stack barrier on the return
+	// from the frame containing sp, this will mark it as hit even
+	// though it isn't, but it's okay to be conservative.
+	before := gp.stkbarPos
+	for int(gp.stkbarPos) < len(gp.stkbar) && gp.stkbar[gp.stkbarPos].savedLRPtr < sp {
+		gcRemoveStackBarrier(gp, gp.stkbar[gp.stkbarPos])
+		gp.stkbarPos++
+	}
+	if debugStackBarrier && gp.stkbarPos != before {
+		print("skip barriers below ", hex(sp), " in goid=", gp.goid, ": ")
+		gcPrintStkbars(gp.stkbar[before:gp.stkbarPos])
+		print("\n")
+	}
+}
+
+// nextBarrierPC returns the original return PC of the next stack barrier.
+// Used by getcallerpc, so it must be nosplit.
+//go:nosplit
+func nextBarrierPC() uintptr {
+	gp := getg()
+	return gp.stkbar[gp.stkbarPos].savedLRVal
+}
+
+// setNextBarrierPC sets the return PC of the next stack barrier.
+// Used by setcallerpc, so it must be nosplit.
+//go:nosplit
+func setNextBarrierPC(pc uintptr) {
+	gp := getg()
+	gp.stkbar[gp.stkbarPos].savedLRVal = pc
+}
+
 // TODO(austin): Can we consolidate the gcDrain* functions?
 
 // gcDrain scans objects in work buffers, blackening grey
@@ -659,7 +809,7 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork) {
 				// Same work as in scanobject; see comments there.
 				obj := *(*uintptr)(unsafe.Pointer(b + i))
 				if obj != 0 && arena_start <= obj && obj < arena_used {
-					if obj, hbits, span := heapBitsForObject(obj, b, i); obj != 0 {
+					if obj, hbits, span := heapBitsForObject(obj); obj != 0 {
 						greyobject(obj, b, i, hbits, span, gcw)
 					}
 				}
@@ -725,7 +875,7 @@ func scanobject(b uintptr, gcw *gcWork) {
 		// Check if it points into heap and not back at the current object.
 		if obj != 0 && arena_start <= obj && obj < arena_used && obj-b >= n {
 			// Mark the object.
-			if obj, hbits, span := heapBitsForObject(obj, b, i); obj != 0 {
+			if obj, hbits, span := heapBitsForObject(obj); obj != 0 {
 				greyobject(obj, b, i, hbits, span, gcw)
 			}
 		}
@@ -739,7 +889,7 @@ func scanobject(b uintptr, gcw *gcWork) {
 // Preemption must be disabled.
 //go:nowritebarrier
 func shade(b uintptr) {
-	if obj, hbits, span := heapBitsForObject(b, 0, 0); obj != 0 {
+	if obj, hbits, span := heapBitsForObject(b); obj != 0 {
 		gcw := &getg().m.p.ptr().gcw
 		greyobject(obj, 0, 0, hbits, span, gcw)
 		if gcphase == _GCmarktermination || gcBlackenPromptly {
@@ -810,7 +960,7 @@ func greyobject(obj, base, off uintptr, hbits heapBits, span *mspan, gcw *gcWork
 // field at byte offset off in obj.
 func gcDumpObject(label string, obj, off uintptr) {
 	if obj < mheap_.arena_start || obj >= mheap_.arena_used {
-		print(label, "=", hex(obj), " is not in the Go heap\n")
+		print(label, "=", hex(obj), " is not a heap object\n")
 		return
 	}
 	k := obj >> _PageShift
@@ -823,27 +973,12 @@ func gcDumpObject(label string, obj, off uintptr) {
 		return
 	}
 	print(" s.start*_PageSize=", hex(s.start*_PageSize), " s.limit=", hex(s.limit), " s.sizeclass=", s.sizeclass, " s.elemsize=", s.elemsize, "\n")
-	skipped := false
 	for i := uintptr(0); i < s.elemsize; i += ptrSize {
-		// For big objects, just print the beginning (because
-		// that usually hints at the object's type) and the
-		// fields around off.
-		if !(i < 128*ptrSize || off-16*ptrSize < i && i < off+16*ptrSize) {
-			skipped = true
-			continue
-		}
-		if skipped {
-			print(" ...\n")
-			skipped = false
-		}
 		print(" *(", label, "+", i, ") = ", hex(*(*uintptr)(unsafe.Pointer(obj + uintptr(i)))))
 		if i == off {
 			print(" <==")
 		}
 		print("\n")
-	}
-	if skipped {
-		print(" ...\n")
 	}
 }
 

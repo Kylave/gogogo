@@ -87,7 +87,7 @@ func typecheckclosure(func_ *Node, top int) {
 		if !n.Name.Captured {
 			n.Name.Captured = true
 			if n.Name.Decldepth == 0 {
-				Fatalf("typecheckclosure: var %v does not have decldepth assigned", Nconv(n, obj.FmtShort))
+				Fatal("typecheckclosure: var %v does not have decldepth assigned", Nconv(n, obj.FmtShort))
 			}
 
 			// Ignore assignments to the variable in straightline code
@@ -172,7 +172,7 @@ func closurename(n *Node) *Sym {
 		n.Func.Outerfunc.Func.Closgen++
 		gen = n.Func.Outerfunc.Func.Closgen
 	} else {
-		Fatalf("closurename called for %v", Nconv(n, obj.FmtShort))
+		Fatal("closurename called for %v", Nconv(n, obj.FmtShort))
 	}
 	n.Sym = Lookupf("%s.%s%d", outer, prefix, gen)
 	return n.Sym
@@ -204,7 +204,7 @@ func makeclosure(func_ *Node) *Node {
 	xfunc.Nbody = func_.Nbody
 	xfunc.Func.Dcl = concat(func_.Func.Dcl, xfunc.Func.Dcl)
 	if xfunc.Nbody == nil {
-		Fatalf("empty body - won't generate any code")
+		Fatal("empty body - won't generate any code")
 	}
 	typecheck(&xfunc, Etop)
 
@@ -322,7 +322,7 @@ func transformclosure(xfunc *Node) {
 				continue
 			}
 			fld = typ(TFIELD)
-			fld.Funarg = true
+			fld.Funarg = 1
 			if v.Name.Byval {
 				// If v is captured by value, we merely downgrade it to PPARAM.
 				v.Class = PPARAM
@@ -355,7 +355,7 @@ func transformclosure(xfunc *Node) {
 
 		// Recalculate param offsets.
 		if f.Type.Width > 0 {
-			Fatalf("transformclosure: width is already calculated")
+			Fatal("transformclosure: width is already calculated")
 		}
 		dowidth(f.Type)
 		xfunc.Type = f.Type // update type of ODCLFUNC
@@ -491,7 +491,7 @@ func typecheckpartialcall(fn *Node, sym *Node) {
 		break
 
 	default:
-		Fatalf("invalid typecheckpartialcall")
+		Fatal("invalid typecheckpartialcall")
 	}
 
 	// Create top-level function.
@@ -518,7 +518,7 @@ func makepartialcall(fn *Node, t0 *Type, meth *Node) *Node {
 		basetype = basetype.Type
 	}
 	if basetype.Etype != TINTER && basetype.Sym == nil {
-		Fatalf("missing base type for %v", rcvrtype)
+		Fatal("missing base type for %v", rcvrtype)
 	}
 
 	var spkg *Pkg

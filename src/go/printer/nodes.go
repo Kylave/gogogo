@@ -747,7 +747,13 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		}
 
 	case *ast.SelectorExpr:
-		p.selectorExpr(x, depth, false)
+		p.expr1(x.X, token.HighestPrec, depth)
+		p.print(token.PERIOD)
+		if line := p.lineFor(x.Sel.Pos()); p.pos.IsValid() && p.pos.Line < line {
+			p.print(indent, newline, x.Sel.Pos(), x.Sel, unindent)
+		} else {
+			p.print(x.Sel.Pos(), x.Sel)
+		}
 
 	case *ast.TypeAssertExpr:
 		p.expr1(x.X, token.HighestPrec, depth)
@@ -796,14 +802,13 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		if len(x.Args) > 1 {
 			depth++
 		}
-		var wasIndented bool
 		if _, ok := x.Fun.(*ast.FuncType); ok {
 			// conversions to literal function types require parentheses around the type
 			p.print(token.LPAREN)
-			wasIndented = p.possibleSelectorExpr(x.Fun, token.HighestPrec, depth)
+			p.expr1(x.Fun, token.HighestPrec, depth)
 			p.print(token.RPAREN)
 		} else {
-			wasIndented = p.possibleSelectorExpr(x.Fun, token.HighestPrec, depth)
+			p.expr1(x.Fun, token.HighestPrec, depth)
 		}
 		p.print(x.Lparen, token.LPAREN)
 		if x.Ellipsis.IsValid() {
@@ -816,9 +821,6 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 			p.exprList(x.Lparen, x.Args, depth, commaTerm, x.Rparen)
 		}
 		p.print(x.Rparen, token.RPAREN)
-		if wasIndented {
-			p.print(unindent)
-		}
 
 	case *ast.CompositeLit:
 		// composite literal elements that are composite literals themselves may have the type omitted
@@ -887,30 +889,6 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 	}
 
 	return
-}
-
-func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {
-	if x, ok := expr.(*ast.SelectorExpr); ok {
-		return p.selectorExpr(x, depth, true)
-	}
-	p.expr1(expr, prec1, depth)
-	return false
-}
-
-// selectorExpr handles an *ast.SelectorExpr node and returns whether x spans
-// multiple lines.
-func (p *printer) selectorExpr(x *ast.SelectorExpr, depth int, isMethod bool) bool {
-	p.expr1(x.X, token.HighestPrec, depth)
-	p.print(token.PERIOD)
-	if line := p.lineFor(x.Sel.Pos()); p.pos.IsValid() && p.pos.Line < line {
-		p.print(indent, newline, x.Sel.Pos(), x.Sel)
-		if !isMethod {
-			p.print(unindent)
-		}
-		return true
-	}
-	p.print(x.Sel.Pos(), x.Sel)
-	return false
 }
 
 func (p *printer) expr0(x ast.Expr, depth int) {

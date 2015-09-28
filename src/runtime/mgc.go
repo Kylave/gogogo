@@ -126,20 +126,32 @@ const (
 	_DebugGC         = 0
 	_ConcurrentSweep = true
 	_FinBlockSize    = 4 * 1024
-
 	_RootData        = 0
 	_RootBss         = 1
 	_RootFinalizers  = 2
-	_RootFlushCaches = 3
-	_RootSpans0      = 4
-	_RootSpansShards = 128
-	_RootCount       = _RootSpans0 + _RootSpansShards
+	_RootSpans       = 3
+	_RootFlushCaches = 4
+	_RootCount       = 5
+
+	debugStackBarrier = false
 
 	// sweepMinHeapDistance is a lower bound on the heap distance
 	// (in bytes) reserved for concurrent sweeping between GC
 	// cycles. This will be scaled by gcpercent/100.
 	sweepMinHeapDistance = 1024 * 1024
 )
+
+// firstStackBarrierOffset is the approximate byte offset at
+// which to place the first stack barrier from the current SP.
+// This is a lower bound on how much stack will have to be
+// re-scanned during mark termination. Subsequent barriers are
+// placed at firstStackBarrierOffset * 2^n offsets.
+//
+// For debugging, this can be set to 0, which will install a
+// stack barrier at every frame. If you do this, you may also
+// have to raise _StackMin, since the stack barrier
+// bookkeeping will use a large amount of each stack.
+var firstStackBarrierOffset = 1024
 
 // heapminimum is the minimum heap size at which to trigger GC.
 // For small heaps, this overrides the usual GOGC*live set rule.

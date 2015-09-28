@@ -639,7 +639,6 @@ func copystack(gp *g, newsize uintptr) {
 	oldsize := gp.stackAlloc
 	gp.stackAlloc = newsize
 	gp.stkbar = newstkbar
-	gp.stktopsp += adjinfo.delta
 
 	// free old stack
 	if stackPoisonCopy != 0 {
@@ -670,7 +669,7 @@ func newstack() {
 		throw("stack growth after fork")
 	}
 	if thisg.m.morebuf.g.ptr() != thisg.m.curg {
-		print("runtime: newstack called from g=", hex(thisg.m.morebuf.g), "\n"+"\tm=", thisg.m, " m->curg=", thisg.m.curg, " m->g0=", thisg.m.g0, " m->gsignal=", thisg.m.gsignal, "\n")
+		print("runtime: newstack called from g=", thisg.m.morebuf.g, "\n"+"\tm=", thisg.m, " m->curg=", thisg.m.curg, " m->g0=", thisg.m.g0, " m->gsignal=", thisg.m.gsignal, "\n")
 		morebuf := thisg.m.morebuf
 		traceback(morebuf.pc, morebuf.sp, morebuf.lr, morebuf.g.ptr())
 		throw("runtime: wrong goroutine in newstack")

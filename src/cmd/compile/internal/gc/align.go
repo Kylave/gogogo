@@ -16,7 +16,7 @@ var defercalc int
 
 func Rnd(o int64, r int64) int64 {
 	if r < 1 || r > 8 || r&(r-1) != 0 {
-		Fatalf("rnd %d", r)
+		Fatal("rnd %d", r)
 	}
 	return (o + r - 1) &^ (r - 1)
 }
@@ -25,7 +25,7 @@ func offmod(t *Type) {
 	o := int32(0)
 	for f := t.Type; f != nil; f = f.Down {
 		if f.Etype != TFIELD {
-			Fatalf("offmod: not TFIELD: %v", Tconv(f, obj.FmtLong))
+			Fatal("offmod: not TFIELD: %v", Tconv(f, obj.FmtLong))
 		}
 		f.Width = int64(o)
 		o += int32(Widthptr)
@@ -46,7 +46,7 @@ func widstruct(errtype *Type, t *Type, o int64, flag int) int64 {
 	var w int64
 	for f := t.Type; f != nil; f = f.Down {
 		if f.Etype != TFIELD {
-			Fatalf("widstruct: not TFIELD: %v", Tconv(f, obj.FmtLong))
+			Fatal("widstruct: not TFIELD: %v", Tconv(f, obj.FmtLong))
 		}
 		if f.Type == nil {
 			// broken field, just skip it so that other valid fields
@@ -59,7 +59,7 @@ func widstruct(errtype *Type, t *Type, o int64, flag int) int64 {
 			maxalign = int32(f.Type.Align)
 		}
 		if f.Type.Width < 0 {
-			Fatalf("invalid width %d", f.Type.Width)
+			Fatal("invalid width %d", f.Type.Width)
 		}
 		w = f.Type.Width
 		if f.Type.Align > 0 {
@@ -111,7 +111,7 @@ func widstruct(errtype *Type, t *Type, o int64, flag int) int64 {
 
 func dowidth(t *Type) {
 	if Widthptr == 0 {
-		Fatalf("dowidth without betypeinit")
+		Fatal("dowidth without betypeinit")
 	}
 
 	if t == nil {
@@ -121,7 +121,7 @@ func dowidth(t *Type) {
 	if t.Width > 0 {
 		if t.Align == 0 {
 			// See issue 11354
-			Fatalf("zero alignment with nonzero size %v", t)
+			Fatal("zero alignment with nonzero size %v", t)
 		}
 		return
 	}
@@ -129,8 +129,8 @@ func dowidth(t *Type) {
 	if t.Width == -2 {
 		lno := int(lineno)
 		lineno = int32(t.Lineno)
-		if !t.Broke {
-			t.Broke = true
+		if t.Broke == 0 {
+			t.Broke = 1
 			Yyerror("invalid recursive type %v", t)
 		}
 
@@ -141,7 +141,7 @@ func dowidth(t *Type) {
 
 	// break infinite recursion if the broken recursive type
 	// is referenced again
-	if t.Broke && t.Width == 0 {
+	if t.Broke != 0 && t.Width == 0 {
 		return
 	}
 
@@ -168,7 +168,7 @@ func dowidth(t *Type) {
 	w := int64(0)
 	switch et {
 	default:
-		Fatalf("dowidth: unknown type: %v", t)
+		Fatal("dowidth: unknown type: %v", t)
 
 		/* compiler-specific stuff */
 	case TINT8, TUINT8, TBOOL:
@@ -233,7 +233,7 @@ func dowidth(t *Type) {
 		checkwidth(t.Down)
 
 	case TFORW: // should have been filled in
-		if !t.Broke {
+		if t.Broke == 0 {
 			Yyerror("invalid recursive type %v", t)
 		}
 		w = 1 // anything will do
@@ -241,13 +241,13 @@ func dowidth(t *Type) {
 		// dummy type; should be replaced before use.
 	case TANY:
 		if Debug['A'] == 0 {
-			Fatalf("dowidth any")
+			Fatal("dowidth any")
 		}
 		w = 1 // anything will do
 
 	case TSTRING:
 		if sizeof_String == 0 {
-			Fatalf("early dowidth string")
+			Fatal("early dowidth string")
 		}
 		w = int64(sizeof_String)
 		t.Align = uint8(Widthptr)
@@ -272,17 +272,17 @@ func dowidth(t *Type) {
 			checkwidth(t.Type)
 			t.Align = uint8(Widthptr)
 		} else if t.Bound == -100 {
-			if !t.Broke {
+			if t.Broke == 0 {
 				Yyerror("use of [...] array outside of array literal")
-				t.Broke = true
+				t.Broke = 1
 			}
 		} else {
-			Fatalf("dowidth %v", t) // probably [...]T
+			Fatal("dowidth %v", t) // probably [...]T
 		}
 
 	case TSTRUCT:
-		if t.Funarg {
-			Fatalf("dowidth fn struct %v", t)
+		if t.Funarg != 0 {
+			Fatal("dowidth fn struct %v", t)
 		}
 		w = widstruct(t, t, 0, 1)
 
@@ -319,7 +319,7 @@ func dowidth(t *Type) {
 	t.Width = w
 	if t.Align == 0 {
 		if w > 8 || w&(w-1) != 0 {
-			Fatalf("invalid alignment for %v", t)
+			Fatal("invalid alignment for %v", t)
 		}
 		t.Align = uint8(w)
 	}
@@ -366,8 +366,8 @@ func checkwidth(t *Type) {
 
 	// function arg structs should not be checked
 	// outside of the enclosing function.
-	if t.Funarg {
-		Fatalf("checkwidth %v", t)
+	if t.Funarg != 0 {
+		Fatal("checkwidth %v", t)
 	}
 
 	if defercalc == 0 {
@@ -375,10 +375,10 @@ func checkwidth(t *Type) {
 		return
 	}
 
-	if t.Deferwidth {
+	if t.Deferwidth != 0 {
 		return
 	}
-	t.Deferwidth = true
+	t.Deferwidth = 1
 
 	l := tlfree
 	if l != nil {
@@ -395,17 +395,17 @@ func checkwidth(t *Type) {
 func defercheckwidth() {
 	// we get out of sync on syntax errors, so don't be pedantic.
 	if defercalc != 0 && nerrors == 0 {
-		Fatalf("defercheckwidth")
+		Fatal("defercheckwidth")
 	}
 	defercalc = 1
 }
 
 func resumecheckwidth() {
 	if defercalc == 0 {
-		Fatalf("resumecheckwidth")
+		Fatal("resumecheckwidth")
 	}
 	for l := tlq; l != nil; l = tlq {
-		l.t.Deferwidth = false
+		l.t.Deferwidth = 0
 		tlq = l.next
 		dowidth(l.t)
 		l.next = tlfree
@@ -419,7 +419,7 @@ var itable *Type // distinguished *byte
 
 func typeinit() {
 	if Widthptr == 0 {
-		Fatalf("typeinit before betypeinit")
+		Fatal("typeinit before betypeinit")
 	}
 
 	for i := 0; i < NTYPE; i++ {
@@ -637,11 +637,11 @@ func typeinit() {
 
 		etype = Thearch.Typedefs[i].Etype
 		if etype < 0 || etype >= len(Types) {
-			Fatalf("typeinit: %s bad etype", s.Name)
+			Fatal("typeinit: %s bad etype", s.Name)
 		}
 		sameas = Thearch.Typedefs[i].Sameas
 		if sameas < 0 || sameas >= len(Types) {
-			Fatalf("typeinit: %s bad sameas", s.Name)
+			Fatal("typeinit: %s bad sameas", s.Name)
 		}
 		Simtype[etype] = uint8(sameas)
 		minfltval[etype] = minfltval[sameas]
@@ -651,7 +651,7 @@ func typeinit() {
 
 		t = Types[etype]
 		if t != nil {
-			Fatalf("typeinit: %s already defined", s.Name)
+			Fatal("typeinit: %s already defined", s.Name)
 		}
 
 		t = typ(etype)
@@ -707,7 +707,7 @@ func Argsize(t *Type) int {
 
 	w = (w + int64(Widthptr) - 1) &^ (int64(Widthptr) - 1)
 	if int64(int(w)) != w {
-		Fatalf("argsize too big")
+		Fatal("argsize too big")
 	}
 	return int(w)
 }

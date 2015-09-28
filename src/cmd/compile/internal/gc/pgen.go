@@ -85,7 +85,7 @@ func makefuncdatasym(namefmt string, funcdatakind int64) *Sym {
 
 func gvardefx(n *Node, as int) {
 	if n == nil {
-		Fatalf("gvardef nil")
+		Fatal("gvardef nil")
 	}
 	if n.Op != ONAME {
 		Yyerror("gvardef %v; %v", Oconv(int(n.Op), obj.FmtSharp), n)
@@ -122,7 +122,7 @@ func removevardef(firstp *obj.Prog) {
 func gcsymdup(s *Sym) {
 	ls := Linksym(s)
 	if len(ls.R) > 0 {
-		Fatalf("cannot rosymdup %s with relocations", ls.Name)
+		Fatal("cannot rosymdup %s with relocations", ls.Name)
 	}
 	ls.Name = fmt.Sprintf("gclocals·%x", md5.Sum(ls.P))
 	ls.Dupok = 1
@@ -164,8 +164,6 @@ func emitptrargsmap() {
 	ggloblsym(sym, int32(off), obj.RODATA|obj.LOCAL)
 }
 
-// cmpstackvarlt reports whether the stack variable a sorts before b.
-//
 // Sort the list of stack variables. Autos after anything else,
 // within autos, unused after used, within used, things with
 // pointers first, zeroed things first, and then decreasing size.
@@ -174,48 +172,48 @@ func emitptrargsmap() {
 // really means, in memory, things with pointers needing zeroing at
 // the top of the stack and increasing in size.
 // Non-autos sort on offset.
-func cmpstackvarlt(a, b *Node) bool {
+func cmpstackvar(a *Node, b *Node) int {
 	if a.Class != b.Class {
 		if a.Class == PAUTO {
-			return false
+			return +1
 		}
-		return true
+		return -1
 	}
 
 	if a.Class != PAUTO {
 		if a.Xoffset < b.Xoffset {
-			return true
+			return -1
 		}
 		if a.Xoffset > b.Xoffset {
-			return false
+			return +1
 		}
-		return false
+		return 0
 	}
 
 	if a.Used != b.Used {
-		return a.Used
+		return obj.Bool2int(b.Used) - obj.Bool2int(a.Used)
 	}
 
-	ap := haspointers(a.Type)
-	bp := haspointers(b.Type)
+	ap := obj.Bool2int(haspointers(a.Type))
+	bp := obj.Bool2int(haspointers(b.Type))
 	if ap != bp {
-		return ap
+		return bp - ap
 	}
 
-	ap = a.Name.Needzero
-	bp = b.Name.Needzero
+	ap = obj.Bool2int(a.Name.Needzero)
+	bp = obj.Bool2int(b.Name.Needzero)
 	if ap != bp {
-		return ap
+		return bp - ap
 	}
 
 	if a.Type.Width < b.Type.Width {
-		return false
+		return +1
 	}
 	if a.Type.Width > b.Type.Width {
-		return true
+		return -1
 	}
 
-	return a.Sym.Name < b.Sym.Name
+	return stringsCompare(a.Sym.Name, b.Sym.Name)
 }
 
 // stkdelta records the stack offset delta for a node
@@ -241,7 +239,7 @@ func allocauto(ptxt *obj.Prog) {
 
 	markautoused(ptxt)
 
-	listsort(&Curfn.Func.Dcl, cmpstackvarlt)
+	listsort(&Curfn.Func.Dcl, cmpstackvar)
 
 	// Unused autos are at the end, chop 'em off.
 	ll := Curfn.Func.Dcl
@@ -275,7 +273,7 @@ func allocauto(ptxt *obj.Prog) {
 		dowidth(n.Type)
 		w = n.Type.Width
 		if w >= Thearch.MAXWIDTH || w < 0 {
-			Fatalf("bad width")
+			Fatal("bad width")
 		}
 		Stksize += w
 		Stksize = Rnd(Stksize, int64(n.Type.Align))
@@ -316,7 +314,7 @@ func Cgen_checknil(n *Node) {
 	// Ideally we wouldn't see any integer types here, but we do.
 	if n.Type == nil || (!Isptr[n.Type.Etype] && !Isint[n.Type.Etype] && n.Type.Etype != TUNSAFEPTR) {
 		Dump("checknil", n)
-		Fatalf("bad checknil")
+		Fatal("bad checknil")
 	}
 
 	if ((Thearch.Thechar == '5' || Thearch.Thechar == '7' || Thearch.Thechar == '9') && n.Op != OREGISTER) || !n.Addable || n.Op == OLITERAL {
@@ -373,7 +371,7 @@ func compile(fn *Node) {
 	// set up domain for labels
 	clearlabels()
 
-	if Curfn.Type.Outnamed {
+	if Curfn.Type.Outnamed != 0 {
 		// add clearing of the output parameters
 		var save Iter
 		t := Structfirst(&save, Getoutarg(Curfn.Type))
@@ -394,7 +392,7 @@ func compile(fn *Node) {
 		goto ret
 	}
 
-	hasdefer = false
+	Hasdefer = 0
 	walk(Curfn)
 	if nerrors != 0 {
 		goto ret
@@ -489,7 +487,7 @@ func compile(fn *Node) {
 	// TODO: Determine when the final cgen_ret can be omitted. Perhaps always?
 	cgen_ret(nil)
 
-	if hasdefer {
+	if Hasdefer != 0 {
 		// deferreturn pretends to have one uintptr argument.
 		// Reserve space for it so stack scanner is happy.
 		if Maxarg < int64(Widthptr) {

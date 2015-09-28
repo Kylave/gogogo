@@ -250,13 +250,11 @@ func reloadPackage(arg string, stk *importStack) *Package {
 	return loadPackage(arg, stk)
 }
 
-// The Go 1.5 vendoring experiment was enabled by setting GO15VENDOREXPERIMENT=1.
-// In Go 1.6 this is on by default and is disabled by setting GO15VENDOREXPERIMENT=0.
-// In Go 1.7 the variable will stop having any effect.
+// The Go 1.5 vendoring experiment is enabled by setting GO15VENDOREXPERIMENT=1.
 // The variable is obnoxiously long so that years from now when people find it in
 // their profiles and wonder what it does, there is some chance that a web search
 // might answer the question.
-var go15VendorExperiment = os.Getenv("GO15VENDOREXPERIMENT") != "0"
+var go15VendorExperiment = os.Getenv("GO15VENDOREXPERIMENT") == "1"
 
 // dirToImportPath returns the pseudo-import path we use for a package
 // outside the Go path.  It begins with _/ and then contains the full path
@@ -409,7 +407,7 @@ func isDir(path string) bool {
 
 // vendoredImportPath returns the expansion of path when it appears in parent.
 // If parent is x/y/z, then path might expand to x/y/z/vendor/path, x/y/vendor/path,
-// x/vendor/path, vendor/path, or else stay path if none of those exist.
+// x/vendor/path, vendor/path, or else stay x/y/z if none of those exist.
 // vendoredImportPath returns the expanded path or, if no expansion is found, the original.
 // If no expansion is found, vendoredImportPath also returns a list of vendor directories
 // it searched along the way, to help prepare a useful error message should path turn

@@ -101,11 +101,10 @@ func probeIPv6Stack() (supportsIPv6, supportsIPv4map bool) {
 //
 //	1. A wild-wild listen, "tcp" + ""
 //	If the platform supports both IPv6 and IPv6 IPv4-mapping
-//	capabilities, or does not support IPv4, we assume that
-//	the user wants to listen on both IPv4 and IPv6 wildcard
-//	addresses over an AF_INET6 socket with IPV6_V6ONLY=0.
-//	Otherwise we prefer an IPv4 wildcard address listen over
-//	an AF_INET socket.
+//	capabilities, we assume that the user want to listen on
+//	both IPv4 and IPv6 wildcard address over an AF_INET6
+//	socket with IPV6_V6ONLY=0.  Otherwise we prefer an IPv4
+//	wildcard address listen over an AF_INET socket.
 //
 //	2. A wild-ipv4wild listen, "tcp" + "0.0.0.0"
 //	Same as 1.
@@ -138,7 +137,7 @@ func favoriteAddrFamily(net string, laddr, raddr sockaddr, mode string) (family 
 	}
 
 	if mode == "listen" && (laddr == nil || laddr.isWildcard()) {
-		if supportsIPv4map || !supportsIPv4 {
+		if supportsIPv4map {
 			return syscall.AF_INET6, false
 		}
 		if laddr == nil {

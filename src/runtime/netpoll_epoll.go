@@ -19,7 +19,8 @@ func epollwait(epfd int32, ev *epollevent, nev, timeout int32) int32
 func closeonexec(fd int32)
 
 var (
-	epfd int32 = -1 // epoll descriptor
+	epfd           int32 = -1 // epoll descriptor
+	netpolllasterr int32
 )
 
 func netpollinit() {
@@ -66,9 +67,9 @@ func netpoll(block bool) *g {
 retry:
 	n := epollwait(epfd, &events[0], int32(len(events)), waitms)
 	if n < 0 {
-		if n != -_EINTR {
+		if n != -_EINTR && n != netpolllasterr {
+			netpolllasterr = n
 			println("runtime: epollwait on fd", epfd, "failed with", -n)
-			throw("epollwait failed")
 		}
 		goto retry
 	}

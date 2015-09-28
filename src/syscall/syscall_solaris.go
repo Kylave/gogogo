@@ -142,23 +142,12 @@ func Getsockname(fd int) (sa Sockaddr, err error) {
 	return anyToSockaddr(&rsa)
 }
 
-const ImplementsGetwd = true
+// The const provides a compile-time constant so clients
+// can adjust to whether there is a working Getwd and avoid
+// even linking this function into the binary.  See ../os/getwd.go.
+const ImplementsGetwd = false
 
-//sys	Getcwd(buf []byte) (n int, err error)
-
-func Getwd() (wd string, err error) {
-	var buf [PathMax]byte
-	// Getcwd will return an error if it failed for any reason.
-	_, err = Getcwd(buf[0:])
-	if err != nil {
-		return "", err
-	}
-	n := clen(buf[:])
-	if n < 1 {
-		return "", EINVAL
-	}
-	return string(buf[:n]), nil
-}
+func Getwd() (string, error) { return "", ENOTSUP }
 
 /*
  * Wrapped

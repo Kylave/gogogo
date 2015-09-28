@@ -28,7 +28,6 @@ type Tree struct {
 	token     [3]item // three-token lookahead for parser.
 	peekCount int
 	vars      []string // variables defined at the moment.
-	treeSet   map[string]*Tree
 }
 
 // Copy returns a copy of the Tree. Any parsing state is discarded.
@@ -206,12 +205,11 @@ func (t *Tree) recover(errp *error) {
 }
 
 // startParse initializes the parser, using the lexer.
-func (t *Tree) startParse(funcs []map[string]interface{}, lex *lexer, treeSet map[string]*Tree) {
+func (t *Tree) startParse(funcs []map[string]interface{}, lex *lexer) {
 	t.Root = nil
 	t.lex = lex
 	t.vars = []string{"$"}
 	t.funcs = funcs
-	t.treeSet = treeSet
 }
 
 // stopParse terminates parsing.
@@ -219,7 +217,6 @@ func (t *Tree) stopParse() {
 	t.lex = nil
 	t.vars = nil
 	t.funcs = nil
-	t.treeSet = nil
 }
 
 // Parse parses the template definition string to construct a representation of
@@ -229,19 +226,19 @@ func (t *Tree) stopParse() {
 func (t *Tree) Parse(text, leftDelim, rightDelim string, treeSet map[string]*Tree, funcs ...map[string]interface{}) (tree *Tree, err error) {
 	defer t.recover(&err)
 	t.ParseName = t.Name
-	t.startParse(funcs, lex(t.Name, text, leftDelim, rightDelim), treeSet)
+	t.startParse(funcs, lex(t.Name, text, leftDelim, rightDelim))
 	t.text = text
-	t.parse()
-	t.add()
+	t.parse(treeSet)
+	t.add(treeSet)
 	t.stopParse()
 	return t, nil
 }
 
-// add adds tree to t.treeSet.
-func (t *Tree) add() {
-	tree := t.treeSet[t.Name]
+// add adds tree to the treeSet.
+func (t *Tree) add(treeSet map[string]*Tree) {
+	tree := treeSet[t.Name]
 	if tree == nil || IsEmptyTree(tree.Root) {
-		t.treeSet[t.Name] = t
+		treeSet[t.Name] = t
 		return
 	}
 	if !IsEmptyTree(t.Root) {
@@ -277,7 +274,7 @@ func IsEmptyTree(n Node) bool {
 // parse is the top-level parser for a template, essentially the same
 // as itemList except it also parses {{define}} actions.
 // It runs to EOF.
-func (t *Tree) parse() (next Node) {
+func (t *Tree) parse(treeSet map[string]*Tree) (next Node) {
 	t.Root = t.newList(t.peek().pos)
 	for t.peek().typ != itemEOF {
 		if t.peek().typ == itemLeftDelim {
@@ -286,8 +283,8 @@ func (t *Tree) parse() (next Node) {
 				newT := New("definition") // name will be updated once we know it.
 				newT.text = t.text
 				newT.ParseName = t.ParseName
-				newT.startParse(t.funcs, t.lex, t.treeSet)
-				newT.parseDefinition()
+				newT.startParse(t.funcs, t.lex)
+				newT.parseDefinition(treeSet)
 				continue
 			}
 			t.backup2(delim)
@@ -303,9 +300,9 @@ func (t *Tree) parse() (next Node) {
 }
 
 // parseDefinition parses a {{define}} ...  {{end}} template definition and
-// installs the definition in t.treeSet. The "define" keyword has already
+// installs the definition in the treeSet map.  The "define" keyword has already
 // been scanned.
-func (t *Tree) parseDefinition() {
+func (t *Tree) parseDefinition(treeSet map[string]*Tree) {
 	const context = "define clause"
 	name := t.expectOneOf(itemString, itemRawString, context)
 	var err error
@@ -319,7 +316,7 @@ func (t *Tree) parseDefinition() {
 	if end.Type() != nodeEnd {
 		t.errorf("unexpected %s in %s", end, context)
 	}
-	t.add()
+	t.add(treeSet)
 	t.stopParse()
 }
 
@@ -361,8 +358,6 @@ func (t *Tree) textOrAction() Node {
 // First word could be a keyword such as range.
 func (t *Tree) action() (n Node) {
 	switch token := t.nextNonSpace(); token.typ {
-	case itemBlock:
-		return t.blockControl()
 	case itemElse:
 		return t.elseControl()
 	case itemEnd:
@@ -527,51 +522,13 @@ func (t *Tree) elseControl() Node {
 	return t.newElse(t.expect(itemRightDelim, "else").pos, t.lex.lineNumber())
 }
 
-// Block:
-//	{{block stringValue pipeline}}
-// Block keyword is past.
-// The name must be something that can evaluate to a string.
-// The pipeline is mandatory.
-func (t *Tree) blockControl() Node {
-	const context = "block clause"
-
-	token := t.nextNonSpace()
-	name := t.parseTemplateName(token, context)
-	pipe := t.pipeline(context)
-
-	block := New(name) // name will be updated once we know it.
-	block.text = t.text
-	block.ParseName = t.ParseName
-	block.startParse(t.funcs, t.lex, t.treeSet)
-	var end Node
-	block.Root, end = block.itemList()
-	if end.Type() != nodeEnd {
-		t.errorf("unexpected %s in %s", end, context)
-	}
-	block.add()
-	block.stopParse()
-
-	return t.newTemplate(token.pos, t.lex.lineNumber(), name, pipe)
-}
-
 // Template:
 //	{{template stringValue pipeline}}
 // Template keyword is past.  The name must be something that can evaluate
 // to a string.
 func (t *Tree) templateControl() Node {
-	const context = "template clause"
+	var name string
 	token := t.nextNonSpace()
-	name := t.parseTemplateName(token, context)
-	var pipe *PipeNode
-	if t.nextNonSpace().typ != itemRightDelim {
-		t.backup()
-		// Do not pop variables; they persist until "end".
-		pipe = t.pipeline(context)
-	}
-	return t.newTemplate(token.pos, t.lex.lineNumber(), name, pipe)
-}
-
-func (t *Tree) parseTemplateName(token item, context string) (name string) {
 	switch token.typ {
 	case itemString, itemRawString:
 		s, err := strconv.Unquote(token.val)
@@ -580,9 +537,15 @@ func (t *Tree) parseTemplateName(token item, context string) (name string) {
 		}
 		name = s
 	default:
-		t.unexpected(token, context)
+		t.unexpected(token, "template invocation")
 	}
-	return
+	var pipe *PipeNode
+	if t.nextNonSpace().typ != itemRightDelim {
+		t.backup()
+		// Do not pop variables; they persist until "end".
+		pipe = t.pipeline("template")
+	}
+	return t.newTemplate(token.pos, t.lex.lineNumber(), name, pipe)
 }
 
 // command:

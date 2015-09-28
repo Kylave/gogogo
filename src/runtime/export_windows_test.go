@@ -6,7 +6,4 @@
 
 package runtime
 
-var (
-	TestingWER              = &testingWER
-	TimeBeginPeriodRetValue = &timeBeginPeriodRetValue
-)
+var TestingWER = &testingWER

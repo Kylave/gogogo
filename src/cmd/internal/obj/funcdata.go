@@ -74,5 +74,6 @@ const (
 	PCDATA_StackMapIndex       = 0
 	FUNCDATA_ArgsPointerMaps   = 0
 	FUNCDATA_LocalsPointerMaps = 1
+	FUNCDATA_DeadValueMaps     = 2
 	ArgsSizeUnknown            = -0x80000000
 )

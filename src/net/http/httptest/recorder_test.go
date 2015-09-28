@@ -6,7 +6,6 @@ package httptest
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"testing"
 )
@@ -65,13 +64,6 @@ func TestRecorder(t *testing.T) {
 				w.Write([]byte("hi first"))
 				w.WriteHeader(201)
 				w.WriteHeader(202)
-			},
-			check(hasStatus(200), hasContents("hi first"), hasFlush(false)),
-		},
-		{
-			"write string",
-			func(w http.ResponseWriter, r *http.Request) {
-				io.WriteString(w, "hi first")
 			},
 			check(hasStatus(200), hasContents("hi first"), hasFlush(false)),
 		},

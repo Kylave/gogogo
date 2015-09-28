@@ -72,7 +72,10 @@ func dumpobj() {
 
 	fmt.Fprintf(bout, "\n!\n")
 
-	externs := len(externdcl)
+	var externs *NodeList
+	if externdcl != nil {
+		externs = externdcl.End
+	}
 
 	dumpglobls()
 	dumptypestructs()
@@ -80,11 +83,14 @@ func dumpobj() {
 	// Dump extra globals.
 	tmp := externdcl
 
-	if externdcl != nil {
-		externdcl = externdcl[externs:]
+	if externs != nil {
+		externdcl = externs.Next
 	}
 	dumpglobls()
 	externdcl = tmp
+
+	zero := Pkglookup("zerovalue", Runtimepkg)
+	ggloblsym(zero, int32(zerosize), obj.DUPOK|obj.RODATA)
 
 	dumpdata()
 	obj.Writeobjdirect(Ctxt, bout)
@@ -107,13 +113,14 @@ func dumpglobls() {
 	var n *Node
 
 	// add globals
-	for _, n := range externdcl {
+	for l := externdcl; l != nil; l = l.Next {
+		n = l.N
 		if n.Op != ONAME {
 			continue
 		}
 
 		if n.Type == nil {
-			Fatalf("external %v nil type\n", n)
+			Fatal("external %v nil type\n", n)
 		}
 		if n.Class == PFUNC {
 			continue
@@ -122,6 +129,7 @@ func dumpglobls() {
 			continue
 		}
 		dowidth(n.Type)
+
 		ggloblnod(n)
 	}
 
@@ -180,6 +188,10 @@ func duint16(s *Sym, off int, v uint16) int {
 
 func duint32(s *Sym, off int, v uint32) int {
 	return duintxx(s, off, uint64(v), 4)
+}
+
+func duint64(s *Sym, off int, v uint64) int {
+	return duintxx(s, off, v, 8)
 }
 
 func duintptr(s *Sym, off int, v uint64) int {
@@ -267,12 +279,31 @@ func slicebytes(nam *Node, s string, len int) {
 	ggloblsym(sym, int32(off), obj.NOPTR|obj.LOCAL)
 
 	if nam.Op != ONAME {
-		Fatalf("slicebytes %v", nam)
+		Fatal("slicebytes %v", nam)
 	}
 	off = int(nam.Xoffset)
 	off = dsymptr(nam.Sym, off, sym, 0)
 	off = duintxx(nam.Sym, off, uint64(len), Widthint)
 	duintxx(nam.Sym, off, uint64(len), Widthint)
+}
+
+func dstringptr(s *Sym, off int, str string) int {
+	off = int(Rnd(int64(off), int64(Widthptr)))
+	p := Thearch.Gins(obj.ADATA, nil, nil)
+	p.From.Type = obj.TYPE_MEM
+	p.From.Name = obj.NAME_EXTERN
+	p.From.Sym = Linksym(s)
+	p.From.Offset = int64(off)
+	p.From3 = new(obj.Addr)
+	p.From3.Type = obj.TYPE_CONST
+	p.From3.Offset = int64(Widthptr)
+
+	Datastring(str+"\x00", &p.To) // TODO(rsc): Remove NUL
+	p.To.Type = obj.TYPE_ADDR
+	p.To.Etype = Simtype[TINT]
+	off += Widthptr
+
+	return off
 }
 
 func Datastring(s string, a *obj.Addr) {
