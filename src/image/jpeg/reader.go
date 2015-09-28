@@ -295,7 +295,7 @@ func (d *decoder) ignore(n int) error {
 }
 
 // Specified in section B.2.2.
-func (d *decoder) processSOF(n int) error {
+func (d *decoder) processSOF(n int, configOnly bool) error {
 	if d.nComp != 0 {
 		return FormatError("multiple SOF markers")
 	}
@@ -318,6 +318,9 @@ func (d *decoder) processSOF(n int) error {
 	}
 	d.height = int(d.tmp[1])<<8 + int(d.tmp[2])
 	d.width = int(d.tmp[3])<<8 + int(d.tmp[4])
+	if configOnly {
+		return nil
+	}
 	if int(d.tmp[5]) != d.nComp {
 		return FormatError("SOF has wrong length")
 	}
@@ -597,7 +600,7 @@ func (d *decoder) decode(r io.Reader, configOnly bool) (image.Image, error) {
 		switch marker {
 		case sof0Marker, sof1Marker, sof2Marker:
 			d.progressive = marker == sof2Marker
-			err = d.processSOF(n)
+			err = d.processSOF(n, configOnly)
 			if configOnly && d.jfif {
 				return nil, err
 			}
